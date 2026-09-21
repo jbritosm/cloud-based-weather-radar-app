@@ -9,6 +9,7 @@ html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif;
 .tag { font-size: 0.75rem; background: #eef; border-radius: 4px; padding: 0 0.4rem; }
 .check { display: flex; align-items: center; gap: 0.5rem; margin: 0.3rem 0; font-size: 0.9rem; }
 .check input[type="range"] { flex: 1; }
+.note { display: block; margin: -0.15rem 0 0.4rem 1.6rem; color: #666; }
 .error { color: #b00020; }
 .map { flex: 1; }
 

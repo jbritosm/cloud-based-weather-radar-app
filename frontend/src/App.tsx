@@ -26,7 +26,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeOverlays, setActiveOverlays] = useState<string[]>(DEFAULT_ACTIVE);
-  const [opacity, setOpacity] = useState(0.7);
+  const [opacity, setOpacity] = useState(0.85);
   const [timeInfo, setTimeInfo] = useState<Record<string, TimeInfo>>({});
   const [frameIndex, setFrameIndex] = useState(FRAME_COUNT - 1); // last = latest image
   const [playing, setPlaying] = useState(false);
@@ -89,14 +89,17 @@ export default function App() {
 
         <h2>Satellite layers (EUMETSAT)</h2>
         {OVERLAYS.map((o) => (
-          <label key={o.id} className="check">
-            <input
-              type="checkbox"
-              checked={activeOverlays.includes(o.id)}
-              onChange={() => toggle(o.id)}
-            />
-            {o.label}
-          </label>
+          <div key={o.id}>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={activeOverlays.includes(o.id)}
+                onChange={() => toggle(o.id)}
+              />
+              {o.label}
+            </label>
+            {o.note && <small className="note">{o.note}</small>}
+          </div>
         ))}
         <label className="check">
           Opacity

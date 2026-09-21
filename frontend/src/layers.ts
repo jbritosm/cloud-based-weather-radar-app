@@ -7,16 +7,34 @@ export interface Overlay {
   id: string;
   label: string;
   wmsLayer: string; // "<workspace>:<layer>"
+  note?: string; // short hint shown under the label
 }
 
+// Order matters: later entries are drawn on top of earlier ones.
 export const OVERLAYS: Overlay[] = [
+  {
+    id: "mtg-geocolour",
+    label: "Geo Colour (MTG)",
+    wmsLayer: "mtg_fd:rgb_geocolour",
+    note: "True colour by day, infrared and city lights at night.",
+  },
   { id: "msg-ir108", label: "Infrared 10.8 µm (MSG)", wmsLayer: "msg_fes:ir108" },
   { id: "mtg-ir105", label: "Infrared 10.5 µm, high resolution (MTG)", wmsLayer: "mtg_fd:ir105_hrfi" },
-  { id: "msg-precip", label: "Precipitation, blended (MSG)", wmsLayer: "msg_fes:h60b" },
-  { id: "msg-cth", label: "Cloud top height (MSG)", wmsLayer: "msg_fes:cth" },
+  {
+    id: "msg-airmass",
+    label: "Airmass RGB (MSG)",
+    wmsLayer: "msg_fes:rgb_airmass",
+    note: "Distinguishes air masses; used to follow storm systems.",
+  },
+  {
+    id: "msg-precip",
+    label: "Precipitation, blended (MSG)",
+    wmsLayer: "msg_fes:h60b",
+    note: "Drawn only where rain is detected; light rain is pale.",
+  },
 ];
 
-export const DEFAULT_ACTIVE = ["msg-ir108"];
+export const DEFAULT_ACTIVE = ["mtg-geocolour"];
 
 // How often we ask the server for newer images.
 export const REFRESH_MS = 10 * 60 * 1000;
