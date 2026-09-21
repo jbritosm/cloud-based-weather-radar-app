@@ -25,18 +25,23 @@ import urllib.request
 from pathlib import Path
 
 BASE = "https://opendata.aemet.es/opendata/api"
-ENDPOINTS = ["/red/radar/raster/nacional", "/red/radar/nacional"]
+# /red/radar/nacional (plain image) answered 404 "Error al obtener los datos": not needed anyway
+ENDPOINTS = ["/red/radar/raster/nacional"]
 OUT = Path(__file__).resolve().parent.parent / "samples"
+
+# AEMET limits requests per minute and reports it as "HTTP 500 ... 429 Too Many Requests ...
+# vuelva a intentarlo el próximo minuto": wait for the next minute before retrying.
+RATE_LIMIT_WAIT_SECONDS = 65
 
 # TIFF tags that are big binary tables, not useful to print
 SKIP_TAGS = {273, 279, 324, 325, 320}
 
 
-def fetch(url: str, key: str | None = None, attempts: int = 3) -> tuple[bytes, dict[str, str]]:
-    """GET with retries on server errors (AEMET answers 500 from time to time)."""
+def fetch(url: str, key: str | None = None, attempts: int = 4) -> tuple[bytes, dict[str, str]]:
+    """GET with retries on server errors and on AEMET's rate limit."""
     last: urllib.error.HTTPError | None = None
     for attempt in range(1, attempts + 1):
-        headers = {"Accept": "*/*", "User-Agent": "tfg-probe" if attempt == 1 else "Mozilla/5.0"}
+        headers = {"Accept": "*/*", "User-Agent": "tfg-probe"}
         if key:
             headers["api_key"] = key
         request = urllib.request.Request(url, headers=headers)
@@ -44,11 +49,17 @@ def fetch(url: str, key: str | None = None, attempts: int = 3) -> tuple[bytes, d
             with urllib.request.urlopen(request, timeout=120) as response:
                 return response.read(), dict(response.headers)
         except urllib.error.HTTPError as exc:
-            print(f"  attempt {attempt}/{attempts}: HTTP {exc.code} body={exc.read()[:300]!r}")
-            if exc.code < 500:
+            body = exc.read()
+            limited = exc.code == 429 or b"429" in body or b"Too Many Requests" in body
+            print(f"  attempt {attempt}/{attempts}: HTTP {exc.code}"
+                  f"{' (rate limited)' if limited else ''} body={body[:200]!r}")
+            if exc.code < 500 and exc.code != 429:
                 raise
             last = exc
-            time.sleep(5 * attempt)
+            if attempt < attempts:
+                wait = RATE_LIMIT_WAIT_SECONDS if limited else 5 * attempt
+                print(f"  waiting {wait}s before retrying")
+                time.sleep(wait)
     assert last is not None
     raise last
 
@@ -137,33 +148,24 @@ def handle_payload(label: str, data: bytes, headers: dict[str, str]) -> None:
 
 
 def probe(endpoint: str, key: str) -> None:
+    """Two requests in total (API call + file download) to stay well inside AEMET's limits."""
     print(f"\n=== {endpoint}")
-    # Twice: if the file download keeps failing, ask for a fresh `datos` URL.
-    for round_number in (1, 2):
-        try:
-            body, _ = fetch(BASE + endpoint, key)
-        except urllib.error.HTTPError as exc:
-            print(f"API call failed: HTTP {exc.code}")
-            return
-        info = json.loads(body)
-        if round_number == 1:
-            print("first response:", json.dumps(info, indent=2)[:800])
-            if info.get("metadatos"):
-                try:
-                    meta, _ = fetch(info["metadatos"])
-                    print("metadatos:", meta.decode("utf-8", "replace")[:1500])
-                except urllib.error.HTTPError as exc:
-                    print(f"metadatos failed: HTTP {exc.code}")
-        if not info.get("datos"):
-            print("no `datos` URL in the response")
-            return
-        try:
-            data, headers = fetch(info["datos"])
-        except urllib.error.HTTPError as exc:
-            print(f"download failed in round {round_number}: HTTP {exc.code}")
-            continue
-        handle_payload(endpoint.strip("/").replace("/", "_"), data, headers)
+    try:
+        body, _ = fetch(BASE + endpoint, key)
+    except urllib.error.HTTPError as exc:
+        print(f"API call failed: HTTP {exc.code}")
         return
+    info = json.loads(body)
+    print("first response:", json.dumps(info, indent=2)[:800])
+    if not info.get("datos"):
+        print("no `datos` URL in the response")
+        return
+    try:
+        data, headers = fetch(info["datos"])
+    except urllib.error.HTTPError as exc:
+        print(f"download failed: HTTP {exc.code}")
+        return
+    handle_payload(endpoint.strip("/").replace("/", "_"), data, headers)
 
 
 def main() -> int:
