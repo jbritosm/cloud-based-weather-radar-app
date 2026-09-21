@@ -2,8 +2,9 @@
 .env
 *.pem
 
-# Downloaded data samples
+# Downloaded data samples and load-test result files
 backend/samples/
+loadtest/results/
 
 # Python
 __pycache__/
@@ -16,6 +17,8 @@ venv/
 # Node
 node_modules/
 dist/
+frontend/test-results/
+frontend/playwright-report/
 
 # Pulumi
 infra/venv/

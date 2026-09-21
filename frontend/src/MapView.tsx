@@ -13,6 +13,7 @@ import {
   type RadarFrames,
   type TimeInfo,
 } from "./layers";
+import type { Theme } from "./theme";
 import type { View } from "./urlState";
 
 // Basemap: OpenStreetMap raster tiles (fine for a university project; switch to a
@@ -47,6 +48,7 @@ interface Props {
   frameTime: number | null;
   timeInfo: Record<string, TimeInfo>;
   radar: RadarFrames | null;
+  theme: Theme;
   initialView: View;
   onViewChange: (view: View) => void;
   onLoadingChange: (loading: boolean) => void;
@@ -55,7 +57,7 @@ interface Props {
 }
 
 const MapView = forwardRef<MapHandle, Props>(function MapView(props, handle) {
-  const { activeOverlays, opacity, frameTime, timeInfo, radar } = props;
+  const { activeOverlays, opacity, frameTime, timeInfo, radar, theme } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const shownTiles = useRef<Record<string, string>>({}); // last tile URL set per overlay
@@ -122,6 +124,17 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, handle) {
       setReady(false);
     };
   }, []);
+
+  // Dark mode: a bright OpenStreetMap under dark panels glares, so dim and desaturate the basemap.
+  // (The weather layers are left untouched: their colours carry information.)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const dark = theme === "dark";
+    map.setPaintProperty("osm", "raster-brightness-max", dark ? 0.42 : 1);
+    map.setPaintProperty("osm", "raster-saturation", dark ? -0.4 : 0);
+    map.setPaintProperty("osm", "raster-contrast", dark ? 0.15 : 0);
+  }, [theme, ready]);
 
   // Apply visibility, opacity and the selected time whenever the controls change.
   useEffect(() => {

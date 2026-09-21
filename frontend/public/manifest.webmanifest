@@ -1,0 +1,18 @@
+{
+  "name": "Plataforma de radar meteorológico",
+  "short_name": "Radar",
+  "description": "Satélite y radar de lluvia sobre España y Europa / Satellite and rain radar over Spain and Europe",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a2e5c",
+  "theme_color": "#0b6fbf",
+  "categories": ["weather"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

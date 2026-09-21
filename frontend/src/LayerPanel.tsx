@@ -1,12 +1,15 @@
 import type { Product, Provider } from "./api";
 import type { Lang, Messages } from "./i18n";
 import { PRESETS, UI_LAYERS, type LayerGroup } from "./layers";
+import type { Theme } from "./theme";
 
 const GROUPS: LayerGroup[] = ["satellite", "rain"];
 
 interface Props {
   t: Messages;
   lang: Lang;
+  theme: Theme;
+  canInstall: boolean;
   className: string;
   activeOverlays: string[];
   opacity: number;
@@ -17,6 +20,8 @@ interface Props {
   onPreset: (ids: string[]) => void;
   onOpacity: (value: number) => void;
   onLang: () => void;
+  onTheme: () => void;
+  onInstall: () => void;
   onGoToSpain: () => void;
   onClose: () => void;
 }
@@ -38,6 +43,15 @@ export default function LayerPanel(props: Props) {
           <p className="muted">{t.tagline}</p>
         </div>
         <div className="panel-actions">
+          <button
+            type="button"
+            className="theme"
+            onClick={props.onTheme}
+            aria-label={props.theme === "dark" ? t.theme.toLight : t.theme.toDark}
+            title={props.theme === "dark" ? t.theme.toLight : t.theme.toDark}
+          >
+            {props.theme === "dark" ? "☀" : "☾"}
+          </button>
           <button
             type="button"
             className="lang"
@@ -70,6 +84,11 @@ export default function LayerPanel(props: Props) {
           <button type="button" className="chip" onClick={props.onGoToSpain}>
             {t.goToSpain}
           </button>
+          {props.canInstall && (
+            <button type="button" className="chip install" onClick={props.onInstall}>
+              ⤓ {t.install}
+            </button>
+          )}
         </div>
       </section>
 

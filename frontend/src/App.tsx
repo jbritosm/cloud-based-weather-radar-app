@@ -15,11 +15,17 @@ import {
   type TimeInfo,
 } from "./layers";
 import MapView, { type MapHandle } from "./MapView";
+import { applyTheme, initialTheme, saveTheme, type Theme } from "./theme";
 import TimeBar from "./TimeBar";
 import { SPAIN_VIEW, parseUrlState, writeUrlState, type View } from "./urlState";
 
 const PLAY_INTERVAL_MS = 1000;
 const NOTICE_MS = 8000;
+
+// Chrome's "install app" event (not in the standard DOM typings)
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+}
 
 export default function App() {
   // Link parameters (view, layers, language) are read once, at start
@@ -27,6 +33,8 @@ export default function App() {
 
   const [lang, setLang] = useState<Lang>(() => initialLang(initial.lang));
   const t = messages[lang];
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [activeOverlays, setActiveOverlays] = useState<string[]>(initial.layers ?? DEFAULT_ACTIVE);
   const [view, setView] = useState<View>(initial.view ?? SPAIN_VIEW);
   const [opacity, setOpacity] = useState(0.85);
@@ -54,11 +62,38 @@ export default function App() {
     saveLang(lang);
   }, [lang, t.appName]);
 
+  useEffect(() => {
+    applyTheme(theme);
+    saveTheme(theme);
+  }, [theme]);
+
   const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
   }, []);
+
+  // Offer "install app" when the browser says the page is installable
+  useEffect(() => {
+    const onPrompt = (event: Event) => {
+      event.preventDefault(); // keep it for our own button
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  // Tell the visitor when the connection drops (the app itself keeps opening from its cache)
+  useEffect(() => {
+    const onOffline = () => showNotice(t.offline);
+    window.addEventListener("offline", onOffline);
+    return () => window.removeEventListener("offline", onOffline);
+  }, [showNotice, t.offline]);
 
   useEffect(() => {
     Promise.all([fetchProviders(), fetchProducts()])
@@ -125,6 +160,8 @@ export default function App() {
       <LayerPanel
         t={t}
         lang={lang}
+        theme={theme}
+        canInstall={installPrompt !== null}
         className={panelOpen ? "open" : ""}
         activeOverlays={activeOverlays}
         opacity={opacity}
@@ -138,6 +175,11 @@ export default function App() {
         }}
         onOpacity={setOpacity}
         onLang={() => setLang((l) => (l === "es" ? "en" : "es"))}
+        onTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        onInstall={() => {
+          void installPrompt?.prompt();
+          setInstallPrompt(null); // the browser only allows one prompt per event
+        }}
         onGoToSpain={() => {
           mapRef.current?.flyToSpain();
           setPanelOpen(false);
@@ -153,6 +195,7 @@ export default function App() {
           frameTime={frameTime}
           timeInfo={timeInfo}
           radar={radar}
+          theme={theme}
           initialView={initial.view ?? SPAIN_VIEW}
           onViewChange={setView}
           onLoadingChange={setMapLoading}

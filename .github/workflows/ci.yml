@@ -3,7 +3,8 @@ name: CI
 on:
   pull_request:
   push:
-    branches-ignore: [main]   # main is built and deployed by deploy.yml
+    branches-ignore: [main]
+  workflow_call:   # deploy.yml runs these same checks before building and deploying main
 
 permissions:
   contents: read
@@ -38,7 +39,34 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm run build
+      - run: npm run build   # type-checks the app and the tests, then bundles
+      - run: npm test        # unit tests (Vitest)
+
+  e2e:
+    # Real Chromium against the production build; every external service (EUMETSAT, RainViewer,
+    # OpenStreetMap, the platform API) is mocked, so it cannot fail because of the internet.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
 
   infra:
     runs-on: ubuntu-latest

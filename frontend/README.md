@@ -11,7 +11,10 @@ Single-page web application: an interactive map of Spain and Europe with satelli
 | **Vite 5** | Dev server and bundler | Very fast dev feedback and a simple production build. Chosen over Next.js because no server-side rendering is needed: the app is a static bundle. |
 | **MapLibre GL JS** | Map rendering | Open-source, WebGL-based vector/raster map engine with no API key or usage fee (unlike Mapbox GL). Radar output can be drawn as raster or vector layers. |
 | **OpenStreetMap raster tiles** | Basemap | Free basemap under the weather data. Fine for a university project; the OSM tile usage policy discourages heavy traffic, so switch provider if load grows. |
-| **nginx** | Static file server (in the container) | Serves the compiled files, with an SPA fallback to `index.html` and long cache headers for hashed assets. |
+| **nginx** | Static file server (in the container) | Serves the compiled files, with an SPA fallback to `index.html`, long cache headers for hashed assets and no-cache for the service worker and HTML. |
+| **Service worker + Web App Manifest** | Installable app (PWA) with an offline shell | Gives a "mobile app" from the same code, with no app-store work. Hand-written to keep it small and easy to reason about (about 70 lines). |
+| **Vitest** | Unit tests | Same tooling as the build (Vite), fast, and no browser needed for pure logic. |
+| **Playwright** | Browser tests | Real Chromium, on desktop and phone sizes; can emulate offline mode, dark mode and touch, and lets us mock every network request. Chosen over Cypress for its multi-project setup and offline/service-worker support. |
 
 ## Structure
 
@@ -25,12 +28,22 @@ src/
   Legend.tsx     colour scales of the layers that are switched on
   layers.ts      layer definitions, WMS/RainViewer tile URLs, time helpers, quick-view presets
   i18n.ts        Spanish and English texts, language choice
+  theme.ts       light/dark theme: system preference, saved choice, applied on <html>
   urlState.ts    reading and writing the shareable link (view, layers, language)
   api.ts         typed fetch helpers: fetchProviders(), fetchProducts()
-  styles.css     layout and the responsive drawer for narrow screens
+  styles.css     layout, colour variables (light + dark) and the responsive drawer
+  *.test.ts      unit tests (Vitest): layers/time logic, URL state, translations
+public/
+  manifest.webmanifest   PWA manifest (name, icons, standalone display)
+  sw.js                  service worker: installable app + offline shell
+  icons/                 app icons (192, 512, maskable, apple-touch, favicon)
+e2e/
+  mocks.ts               answers every external request (EUMETSAT, RainViewer, OSM, API)
+  app.spec.ts            desktop browser tests   mobile.spec.ts   phone tests   pwa.spec.ts   PWA tests
+playwright.config.ts     3 projects (desktop, mobile, pwa) against the production build
 Dockerfile      multi-stage build (Node build -> nginx)
-nginx.conf      SPA routing + cache headers
-vite.config.ts  dev proxy: /api -> http://localhost:8000
+nginx.conf      SPA routing + cache headers (service worker and HTML never cached)
+vite.config.ts  dev proxy: /api -> http://localhost:8000; Vitest settings
 ```
 
 ## How it works
@@ -50,6 +63,8 @@ vite.config.ts  dev proxy: /api -> http://localhost:8000
   - A loading indicator, a toast when a layer fails to load, a geolocation button, and a "System status" panel (data sources and latest ingested products) kept out of the way for ordinary visitors.
   - **Responsive:** on screens up to 800 px the panel becomes a slide-in drawer opened by a "Layers" button, the legend starts collapsed, and the controls stay above the map attribution.
   - **Language:** Spanish by default, with a switch; the choice is remembered in `localStorage`, and `?lang=` overrides it.
+  - **Dark mode:** a switch in the panel. It follows the system preference until the visitor chooses, then remembers the choice. All colours are CSS variables that the dark theme redefines; a tiny inline script in `index.html` sets the theme before the first paint (no white flash); the browser toolbar colour follows; the OpenStreetMap basemap is dimmed and desaturated through MapLibre's raster paint properties, while the weather layers are left untouched (their colours carry information); MapLibre's own controls are restyled; and EUMETSAT's legend images (black text on transparent) are kept on a white background so they stay readable.
+- **Installable app (PWA):** `manifest.webmanifest` plus icons make the site installable on phones and desktops ("Install app" button, shown when the browser offers it). `sw.js` is a hand-written service worker (no library): at install it caches the app shell (HTML, hashed JS/CSS, icons); page loads go network-first (updates arrive) with the cached shell as the offline fallback; hashed assets are cache-first. It deliberately does **not** touch `/api/*` or any other origin, so live data and weather tiles are never served stale, and offline the app opens but the map has no data (a notice says so). It is registered only in the production build. nginx serves `sw.js` and the HTML with `Cache-Control: no-cache`, the reason a stale worker can never trap users on an old version; hashed assets get a one-year immutable cache.
 - The Docker image builds the app in a Node stage and copies only the static output into a small nginx image, so **Node is not needed on the developer machine or on the server**.
 
 ## Interacts with
@@ -74,7 +89,21 @@ vite.config.ts  dev proxy: /api -> http://localhost:8000
 - No pointer inspection yet (click the map to read a value).
 - The animation changes the tile URL of each layer, so tiles reload on every step and may flicker briefly; preloading frames as stacked layers would smooth it.
 - The satellite layers depend on EUMETSAT's public service being reachable from the user's browser.
-- No automated frontend tests in the repository yet. The behaviour was verified with a throwaway headless-browser script (21 checks: animation, layer toggling, shareable links, language, legend, drag, mobile drawer); the next step is to turn it into a Playwright test in CI, plus Vitest for `layers.ts` and `urlState.ts`.
+- The service worker is not versioned automatically: bump `VERSION` in `sw.js` when its behaviour changes. Offline, the map has no data.
+- The production bundle is about 1 MB (mostly MapLibre); code-splitting the map would speed up the first visit.
+- The browser tests use mocked services, so they prove the app's logic, not that EUMETSAT or RainViewer are up; the platform's load test covers our own servers.
+
+## Tests
+
+```bash
+npm test               # unit tests (Vitest), about 2 s
+npm run test:e2e       # browser tests (Playwright), about 40 s: builds the app and serves it
+```
+
+- **Unit (27 tests):** the time logic (parsing WMS extents, snapping to each layer's own cadence, never asking for the future), the radar frame selection, the shareable-link parser (including hostile input) and that both languages have exactly the same texts and cover every layer. Writing them found a real bug: `?lat=&lng=&z=` (empty values) was accepted as a view at 0°, 0°, zoom 0.
+- **Browser (26 tests, Chromium):** real user flows against the production build, on desktop and on a phone-sized screen: animation play/pause, "Now", layers and quick views, legends, dragging the map, shareable links, language, dark mode (system preference, switch, persistence, legend readability), a failing layer showing a notice, the mobile drawer and that the controls never cover the map attribution, and the PWA (manifest and icons valid, service worker installs, the shell opens **offline**, `/api` and other origins are never cached).
+- **Hermetic by design:** `e2e/mocks.ts` answers every external request, so the tests cannot fail because a third-party service is slow or down. The mocks also record the tile requests, which allows checking that stepping back 15 minutes asks the MTG layer (one image every 10 min) for -20 min, the MSG layer (every 15 min) for -15 min, and the radar (every 10 min) for its -20 min frame.
+- Both run in CI (`ci.yml`) on every branch and before every deploy of `main`.
 
 ## Run without Docker
 

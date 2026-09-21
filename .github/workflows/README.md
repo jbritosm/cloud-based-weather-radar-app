@@ -21,19 +21,20 @@ Three workflows automate integration, delivery and infrastructure changes.
 | Job | Checks |
 |---|---|
 | `backend` | `ruff check`, `pytest` |
-| `frontend` | `npm ci`, `npm run build` (type-check + bundle) |
+| `frontend` | `npm ci`, `npm run build` (type-checks the app **and** the tests, then bundles), `npm test` (Vitest unit tests) |
+| `e2e` | Playwright browser tests (desktop, phone, installable app) against the production build, in real Chromium. All external services are mocked, so it cannot fail because of the internet. The report is attached to the run when it fails. |
 | `infra` | `ruff`, Python compile check of the Pulumi program |
 | `docker` | Compose files are valid, and all images build |
 
-Purpose: catch problems before code reaches `main`. It uses no AWS access.
+Purpose: catch problems before code reaches `main`. It uses no AWS access. It is also a **reusable workflow** (`workflow_call`), which is how `deploy.yml` runs it.
 
 ### `deploy.yml`: continuous delivery
 **Trigger:** push to `main` (or manual run).
 
 ```
-test ──▶ build ──▶ deploy
+ci ──▶ build ──▶ deploy
 ```
-1. **test**: lint and unit tests again (never deploy untested code).
+1. **ci**: calls `ci.yml` (backend, frontend + unit tests, browser tests, infra, compose). Pushes to `main` do not trigger `ci.yml` on their own, so this is what makes sure `main` is never built or deployed unless every check passes.
 2. **build**: build `tfg-backend` and `tfg-web` images, push to GHCR tagged with the commit SHA and `latest`.
 3. **deploy**:
    - Assume the `tfg-gha-deploy` AWS role through OIDC.

@@ -19,17 +19,20 @@ export const SPAIN_VIEW: View = { lat: 40.2, lng: -3.7, zoom: 5 };
 
 const inRange = (n: number, min: number, max: number) => Number.isFinite(n) && n >= min && n <= max;
 
+/** A number from a parameter; NaN when it is missing or blank (Number("") would give 0). */
+const numberParam = (params: URLSearchParams, name: string) => {
+  const raw = params.get(name);
+  return raw === null || raw.trim() === "" ? Number.NaN : Number(raw);
+};
+
 export function parseUrlState(search: string): UrlState {
   const params = new URLSearchParams(search);
   const state: UrlState = {};
 
-  const lat = Number(params.get("lat"));
-  const lng = Number(params.get("lng"));
-  const zoom = Number(params.get("z"));
-  if (
-    params.has("lat") && params.has("lng") && params.has("z") &&
-    inRange(lat, -85, 85) && inRange(lng, -180, 180) && inRange(zoom, 0, 22)
-  ) {
+  const lat = numberParam(params, "lat");
+  const lng = numberParam(params, "lng");
+  const zoom = numberParam(params, "z");
+  if (inRange(lat, -85, 85) && inRange(lng, -180, 180) && inRange(zoom, 0, 22)) {
     state.view = { lat, lng, zoom };
   }
 

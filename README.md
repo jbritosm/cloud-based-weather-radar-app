@@ -83,7 +83,11 @@ Every part has its own README with the technologies used, **why** they were chos
 | | OIDC federation | GitHub authenticates to AWS with short-lived tokens; no AWS keys are stored in GitHub. |
 | **Quality** | pytest | Backend unit and API tests. |
 | | Ruff | Python linter, run in CI. |
-| | k6 | Load testing (`loadtest/smoke.js`). |
+| | Vitest | Frontend unit tests (time logic, shareable links, translations). |
+| | Playwright | Browser tests in real Chromium (desktop, phone, offline app), with every external service mocked; run in CI before every deploy. |
+| | k6 | Load testing (`loadtest/smoke.js`, profiles smoke/load/stress); results in the load-test README. |
+| **Frontend features** | PWA (manifest + service worker) | The site is installable on phones and desktops and its shell opens offline. |
+| | Light/dark theme, Spanish/English, shareable links | Usability: system-aware dark mode, a language switch, and links that restore the view. |
 | **Data sources** | NOAA NEXRAD (AWS Open Data) | US weather radar volumes; the first working provider, used to build and validate the pipeline. |
 | | EUMETSAT EUMETView WMS | Meteosat (MSG/MTG) satellite imagery over Spain drawn directly in the map, with a time animation; no API key. |
 | | RainViewer tile API | Rain radar composite over Spain drawn directly in the map with the time slider; third-party, attribution required. |
