@@ -5,8 +5,11 @@ import {
   FRAME_COUNT,
   FRAME_STEP_MS,
   OVERLAYS,
+  RAIN_RADAR,
   REFRESH_MS,
+  fetchRadarFrames,
   fetchTimeInfo,
+  type RadarFrames,
   type TimeInfo,
 } from "./layers";
 import MapView from "./MapView";
@@ -28,6 +31,7 @@ export default function App() {
   const [activeOverlays, setActiveOverlays] = useState<string[]>(DEFAULT_ACTIVE);
   const [opacity, setOpacity] = useState(0.85);
   const [timeInfo, setTimeInfo] = useState<Record<string, TimeInfo>>({});
+  const [radar, setRadar] = useState<RadarFrames | null>(null);
   const [frameIndex, setFrameIndex] = useState(FRAME_COUNT - 1); // last = latest image
   const [playing, setPlaying] = useState(false);
 
@@ -43,12 +47,16 @@ export default function App() {
   // Which satellite images exist? Asked at start and then periodically, so the newest
   // frame appears without reloading the page.
   const loadTimes = useCallback(async () => {
-    const results = await Promise.allSettled(OVERLAYS.map((o) => fetchTimeInfo(o.wmsLayer)));
+    const [results, radarFrames] = await Promise.all([
+      Promise.allSettled(OVERLAYS.map((o) => fetchTimeInfo(o.wmsLayer))),
+      fetchRadarFrames().catch(() => null),
+    ]);
     const info: Record<string, TimeInfo> = {};
     results.forEach((r, i) => {
       if (r.status === "fulfilled") info[OVERLAYS[i].id] = r.value;
     });
     setTimeInfo(info);
+    setRadar((previous) => radarFrames ?? previous); // keep the old frames if a refresh fails
   }, []);
 
   useEffect(() => {
@@ -60,10 +68,12 @@ export default function App() {
   // Frames end at the newest image available in any layer; layers that lag simply repeat theirs.
   const frames = useMemo(() => {
     const ends = Object.values(timeInfo).map((i) => i.end);
+    const radarEnd = radar?.frames[radar.frames.length - 1]?.time;
+    if (radarEnd !== undefined) ends.push(radarEnd);
     if (ends.length === 0) return [];
     const newest = Math.max(...ends);
     return Array.from({ length: FRAME_COUNT }, (_, i) => newest - (FRAME_COUNT - 1 - i) * FRAME_STEP_MS);
-  }, [timeInfo]);
+  }, [timeInfo, radar]);
 
   useEffect(() => {
     if (!playing || frames.length === 0) return;
@@ -101,6 +111,17 @@ export default function App() {
             {o.note && <small className="note">{o.note}</small>}
           </div>
         ))}
+        <div>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={activeOverlays.includes(RAIN_RADAR.id)}
+              onChange={() => toggle(RAIN_RADAR.id)}
+            />
+            {RAIN_RADAR.label}
+          </label>
+          <small className="note">{RAIN_RADAR.note}</small>
+        </div>
         <label className="check">
           Opacity
           <input
@@ -165,6 +186,7 @@ export default function App() {
         opacity={opacity}
         frameTime={frameTime}
         timeInfo={timeInfo}
+        radar={radar}
       />
     </div>
   );

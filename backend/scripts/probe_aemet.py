@@ -147,11 +147,11 @@ def handle_payload(label: str, data: bytes, headers: dict[str, str]) -> None:
         print("not a tar archive:", exc)
 
 
-def probe(endpoint: str, key: str) -> None:
+def probe(endpoint: str, key: str, attempts: int) -> None:
     """Two requests in total (API call + file download) to stay well inside AEMET's limits."""
     print(f"\n=== {endpoint}")
     try:
-        body, _ = fetch(BASE + endpoint, key)
+        body, _ = fetch(BASE + endpoint, key, attempts=1)
     except urllib.error.HTTPError as exc:
         print(f"API call failed: HTTP {exc.code}")
         return
@@ -161,7 +161,7 @@ def probe(endpoint: str, key: str) -> None:
         print("no `datos` URL in the response")
         return
     try:
-        data, headers = fetch(info["datos"])
+        data, headers = fetch(info["datos"], attempts=attempts)
     except urllib.error.HTTPError as exc:
         print(f"download failed: HTTP {exc.code}")
         return
@@ -169,15 +169,20 @@ def probe(endpoint: str, key: str) -> None:
 
 
 def main() -> int:
+    """Endpoints to try can be passed as arguments; PROBE_ATTEMPTS sets download attempts."""
     key = os.environ.get("AEMET_API_KEY", "").strip()
     if not key:
         print("AEMET_API_KEY is not set (empty secret?).")
         return 1
+    endpoints = sys.argv[1:] or ENDPOINTS
+    attempts = int(os.environ.get("PROBE_ATTEMPTS", "4"))
     OUT.mkdir(exist_ok=True)
-    for endpoint in ENDPOINTS:
+    for index, endpoint in enumerate(endpoints):
+        if index:
+            time.sleep(3)  # be polite between candidates
         try:
-            probe(endpoint, key)
-        except Exception as exc:  # keep going: one failing endpoint must not hide the other
+            probe(endpoint, key, attempts)
+        except Exception as exc:  # keep going: one failing endpoint must not hide the others
             print(f"{endpoint}: unexpected {type(exc).__name__}: {exc}")
     return 0
 

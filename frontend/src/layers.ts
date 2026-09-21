@@ -34,7 +34,57 @@ export const OVERLAYS: Overlay[] = [
   },
 ];
 
-export const DEFAULT_ACTIVE = ["mtg-geocolour"];
+// Rain radar over Spain and the rest of the world: RainViewer publishes a composite of national
+// radars as ready-made tiles (free public API, CORS enabled, attribution required). It keeps
+// about the last 2 hours in 10-minute steps. It complements our own ingestion (NEXRAD, AEMET).
+export const RAIN_RADAR = {
+  id: "rain-radar",
+  label: "Rain radar (RainViewer)",
+  note: "Third-party composite of national radars; last 2 hours.",
+};
+
+export const DEFAULT_ACTIVE = ["mtg-geocolour", RAIN_RADAR.id];
+
+const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
+const RADAR_COLOR_SCHEME = 6; // NEXRAD Level III colours (green to red), the usual radar look
+export const RADAR_MAX_ZOOM = 7; // the free tiles stop at this zoom: MapLibre enlarges beyond it
+
+export interface RadarFrame {
+  time: number; // epoch ms
+  path: string;
+}
+
+export interface RadarFrames {
+  host: string;
+  frames: RadarFrame[]; // oldest first
+}
+
+export function parseRadarFrames(data: {
+  host: string;
+  radar: { past: { time: number; path: string }[] };
+}): RadarFrames {
+  const frames = data.radar.past
+    .map((f) => ({ time: f.time * 1000, path: f.path }))
+    .sort((a, b) => a.time - b.time);
+  return { host: data.host, frames };
+}
+
+export async function fetchRadarFrames(): Promise<RadarFrames> {
+  const response = await fetch(RAINVIEWER_API);
+  if (!response.ok) throw new Error(`rainviewer: HTTP ${response.status}`);
+  return parseRadarFrames(await response.json());
+}
+
+/** Newest radar image at or before `time`; null when `time` is older than the first frame. */
+export function radarFrameAt(radar: RadarFrames, time: number): RadarFrame | null {
+  let found: RadarFrame | null = null;
+  for (const frame of radar.frames) if (frame.time <= time) found = frame;
+  return found;
+}
+
+export function radarTiles(radar: RadarFrames, frame: RadarFrame): string[] {
+  return [`${radar.host}${frame.path}/256/{z}/{x}/{y}/${RADAR_COLOR_SCHEME}/1_1.png`];
+}
 
 // How often we ask the server for newer images.
 export const REFRESH_MS = 10 * 60 * 1000;

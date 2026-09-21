@@ -84,7 +84,7 @@ A failing provider is logged and skipped; it never stops the loop or the other p
 - Tables are created with `create_all`; introduce **Alembic** migrations before the schema changes.
 - The worker only stores raw files. Next: decode NEXRAD Level II with Py-ART, render map tiles, and serve them.
 - No authentication: the API is read-only and public by design for now.
-- `aemet_radar`, `eumetsat` and `copernicus` providers are stubs. AEMET is next: according to AEMET's catalogue its georeferenced radar is GeoTIFF (EPSG:4326, every 30 minutes); the implementation waits for the probe output to confirm the payload.
+- `aemet_radar`, `eumetsat` and `copernicus` providers are stubs. What the AEMET probe found: the regional radar GIFs download fine (one per radar, every 10 minutes) but carry no georeferencing, and the georeferenced GeoTIFF download is refused with a rate-limit error that has lasted for more than a day. Details in `providers/aemet_radar.py`.
 
 ## Run the tests
 

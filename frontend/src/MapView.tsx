@@ -1,7 +1,17 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
-import { OVERLAYS, snapToLayer, wmsTiles, type TimeInfo } from "./layers";
+import {
+  OVERLAYS,
+  RADAR_MAX_ZOOM,
+  RAIN_RADAR,
+  radarFrameAt,
+  radarTiles,
+  snapToLayer,
+  wmsTiles,
+  type RadarFrames,
+  type TimeInfo,
+} from "./layers";
 
 // Basemap: OpenStreetMap raster tiles (fine for a university project; switch to a
 // proper tile provider if traffic grows). Weather overlays are added as extra layers.
@@ -24,9 +34,10 @@ interface Props {
   /** Instant to display (epoch ms); null until the server's available times are known. */
   frameTime: number | null;
   timeInfo: Record<string, TimeInfo>;
+  radar: RadarFrames | null;
 }
 
-export default function MapView({ activeOverlays, opacity, frameTime, timeInfo }: Props) {
+export default function MapView({ activeOverlays, opacity, frameTime, timeInfo, radar }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const shownTiles = useRef<Record<string, string>>({}); // last tile URL set per overlay
@@ -91,7 +102,35 @@ export default function MapView({ activeOverlays, opacity, frameTime, timeInfo }
         (map.getSource(overlay.id) as maplibregl.RasterTileSource).setTiles(tiles);
       }
     }
-  }, [activeOverlays, opacity, ready, frameTime, timeInfo]);
+
+    // Rain radar (RainViewer): its own frame list, registered once it has been fetched.
+    if (radar && radar.frames.length > 0) {
+      const frame =
+        frameTime !== null ? radarFrameAt(radar, frameTime) : radar.frames[radar.frames.length - 1];
+      const tiles = frame ? radarTiles(radar, frame) : null;
+      if (!map.getSource(RAIN_RADAR.id) && tiles) {
+        shownTiles.current[RAIN_RADAR.id] = tiles[0];
+        map.addSource(RAIN_RADAR.id, {
+          type: "raster",
+          tiles,
+          tileSize: 256,
+          maxzoom: RADAR_MAX_ZOOM,
+          attribution: "Radar © RainViewer",
+        });
+        map.addLayer({ id: RAIN_RADAR.id, type: "raster", source: RAIN_RADAR.id });
+      }
+      if (map.getLayer(RAIN_RADAR.id)) {
+        // Hidden when off, or when the selected time is older than the 2 hours it keeps.
+        const visible = activeOverlays.includes(RAIN_RADAR.id) && tiles !== null;
+        map.setLayoutProperty(RAIN_RADAR.id, "visibility", visible ? "visible" : "none");
+        map.setPaintProperty(RAIN_RADAR.id, "raster-opacity", opacity);
+        if (tiles && shownTiles.current[RAIN_RADAR.id] !== tiles[0]) {
+          shownTiles.current[RAIN_RADAR.id] = tiles[0];
+          (map.getSource(RAIN_RADAR.id) as maplibregl.RasterTileSource).setTiles(tiles);
+        }
+      }
+    }
+  }, [activeOverlays, opacity, ready, frameTime, timeInfo, radar]);
 
   return <div ref={container} className="map" />;
 }

@@ -86,7 +86,8 @@ Every part has its own README with the technologies used, **why** they were chos
 | | k6 | Load testing (`loadtest/smoke.js`). |
 | **Data sources** | NOAA NEXRAD (AWS Open Data) | US weather radar volumes; the first working provider, used to build and validate the pipeline. |
 | | EUMETSAT EUMETView WMS | Meteosat (MSG/MTG) satellite imagery over Spain drawn directly in the map, with a time animation; no API key. |
-| | AEMET OpenData *(in progress)* | Spanish national weather service: georeferenced radar for Spain, to be ingested by the worker. |
+| | RainViewer tile API | Rain radar composite over Spain drawn directly in the map with the time slider; third-party, attribution required. |
+| | AEMET OpenData *(blocked, see backend README)* | Spanish national weather service radar. The regional GIFs download but are not georeferenced; the georeferenced GeoTIFF download is currently refused by AEMET (rate limit). |
 | | EUMETSAT Data Store *(planned)* | Download the satellite files themselves for our own processing. |
 | | Copernicus CDS *(planned)* | Reanalysis and model data (e.g. ERA5) for overlays. |
 | **Planned** | Py-ART, xarray, satpy | Decode radar / satellite formats and render map tiles. |
