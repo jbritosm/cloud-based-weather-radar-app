@@ -1,0 +1,4 @@
+# Force LF everywhere: deploy.sh and Dockerfiles run on Linux and break with CRLF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

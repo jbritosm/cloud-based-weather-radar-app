@@ -1,0 +1,6 @@
+# Production additions. Only Caddy is exposed to the internet; S3 access uses the EC2 instance role.
+services:
+  caddy:
+    ports:
+      - "80:80"
+      - "443:443"

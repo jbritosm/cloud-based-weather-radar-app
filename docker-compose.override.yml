@@ -1,0 +1,47 @@
+# Local development additions (loaded automatically by `docker compose up`).
+# NOT used in production: deploy.sh passes -f docker-compose.yml -f docker-compose.prod.yml.
+x-local-s3: &local-s3
+  S3_ENDPOINT_URL: http://minio:9000
+  AWS_ACCESS_KEY_ID: minioadmin
+  AWS_SECRET_ACCESS_KEY: minioadmin
+
+services:
+  caddy:
+    ports:
+      - "8080:80"        # app at http://localhost:8080
+
+  api:
+    ports:
+      - "8000:8000"      # API docs at http://localhost:8000/docs
+    environment:
+      <<: *local-s3
+
+  worker:
+    pull_policy: never   # use the image built by `api`, don't try to pull the local tag
+    environment:
+      <<: *local-s3
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  db:
+    ports:
+      - "5432:5432"
+
+  # S3 stand-in. Console at http://localhost:9001 (minioadmin / minioadmin).
+  minio:
+    image: quay.io/minio/minio   # no longer published on Docker Hub
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  miniodata:

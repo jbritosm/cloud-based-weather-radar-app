@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+
+.layout { display: flex; height: 100%; }
+.sidebar { width: 320px; padding: 1rem; overflow-y: auto; border-right: 1px solid #ddd; }
+.sidebar h1 { font-size: 1.2rem; margin-top: 0; }
+.sidebar h2 { font-size: 1rem; margin-top: 1.5rem; }
+.sidebar ul { padding-left: 1.1rem; }
+.tag { font-size: 0.75rem; background: #eef; border-radius: 4px; padding: 0 0.4rem; }
+.error { color: #b00020; }
+.map { flex: 1; }
+
+@media (max-width: 700px) {
+  .layout { flex-direction: column-reverse; }
+  .sidebar { width: 100%; height: 40%; border-right: 0; border-top: 1px solid #ddd; }
+}

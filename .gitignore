@@ -1,0 +1,23 @@
+# Secrets / local env
+.env
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# Pulumi
+infra/venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/

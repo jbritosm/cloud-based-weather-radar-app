@@ -1,0 +1,13 @@
+# SITE_ADDRESS=:80            -> plain HTTP (local, or AWS without a domain)
+# SITE_ADDRESS=tfg.example.com -> Caddy obtains a Let's Encrypt certificate automatically
+{$SITE_ADDRESS::80} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

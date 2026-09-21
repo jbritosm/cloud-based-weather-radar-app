@@ -1,0 +1,75 @@
+# Base stack, shared by local development and production.
+#   local: docker compose up --build        (docker-compose.override.yml is picked up automatically)
+#   prod : docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   (done by deploy/deploy.sh)
+name: tfg
+
+x-backend: &backend
+  image: ghcr.io/${GHCR_OWNER:-local}/tfg-backend:${TAG:-latest}
+  restart: unless-stopped
+  environment: &backend-env
+    DATABASE_URL: postgresql+psycopg://tfg:${POSTGRES_PASSWORD:-tfg}@db:5432/tfg
+    S3_BUCKET: ${S3_BUCKET:-tfg-data}
+    AWS_REGION: ${AWS_REGION:-eu-west-1}
+    INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-300}
+    NEXRAD_SITES: ${NEXRAD_SITES:-KTLX,KOKX}
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tfg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tfg}
+      POSTGRES_DB: tfg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tfg -d tfg"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *backend
+    build: ./backend   # built here only: the worker reuses the same image
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Same image as the API, different entrypoint. It waits for the API so that
+  # the API creates the tables first.
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.ingest.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/${GHCR_OWNER:-local}/tfg-web:${TAG:-latest}
+    build: ./frontend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

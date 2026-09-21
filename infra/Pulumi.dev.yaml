@@ -1,0 +1,7 @@
+config:
+  aws:region: eu-west-1
+  tfg:githubRepo: jbritosm/cloud-based-weather-radar-app
+  # Optional overrides (defaults in __main__.py):
+  # tfg:instanceType: t3.micro
+  # tfg:volumeSizeGb: "20"
+  # tfg:rawRetentionDays: "7"

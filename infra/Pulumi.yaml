@@ -1,0 +1,7 @@
+name: tfg
+description: Weather radar platform - AWS infrastructure (EC2 + S3 + GitHub OIDC)
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: venv
