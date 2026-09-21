@@ -5,3 +5,4 @@ config:
   # tfg:instanceType: t3.micro
   # tfg:volumeSizeGb: "20"
   # tfg:rawRetentionDays: "7"
+encryptionsalt: v1:bxm1XepolVQ=:v1:T6WuE0skSEOiA5HJ:VaKWAefZHE3JrT2r7N6wd1H1UBasGw==
