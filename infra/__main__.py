@@ -205,7 +205,7 @@ github_oidc = aws.iam.OpenIdConnectProvider(
 )
 
 
-def github_trust(subject: str):
+def github_trust(subjects: list[str]):
     return github_oidc.arn.apply(
         lambda arn: json.dumps(
             {
@@ -219,7 +219,7 @@ def github_trust(subject: str):
                             "StringEquals": {
                                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
                             },
-                            "StringLike": {"token.actions.githubusercontent.com:sub": subject},
+                            "StringLike": {"token.actions.githubusercontent.com:sub": subjects},
                         },
                     }
                 ],
@@ -229,7 +229,14 @@ def github_trust(subject: str):
 
 
 # Only workflows running on the main branch of your repository can assume these roles.
-main_branch = f"repo:{github_repo}:ref:refs/heads/main"
+github_owner, github_repo_name = github_repo.split("/")
+main_branch = [
+    # classic subject format
+    f"repo:{github_repo}:ref:refs/heads/main",
+    # format used by newer repositories: the subject embeds the immutable owner and repo ids
+    # (repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:...)
+    f"repo:{github_owner}@*/{github_repo_name}@*:ref:refs/heads/main",
+]
 
 deploy_role = aws.iam.Role(
     "gha-deploy",
