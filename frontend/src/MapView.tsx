@@ -1,7 +1,8 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
+  LAYER_IDS,
   OVERLAYS,
   RADAR_MAX_ZOOM,
   RAIN_RADAR,
@@ -12,6 +13,7 @@ import {
   type RadarFrames,
   type TimeInfo,
 } from "./layers";
+import type { View } from "./urlState";
 
 // Basemap: OpenStreetMap raster tiles (fine for a university project; switch to a
 // proper tile provider if traffic grows). Weather overlays are added as extra layers.
@@ -28,6 +30,16 @@ const style: maplibregl.StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
 
+// Mainland Spain and the Balearic Islands (west, south, east, north)
+const SPAIN_BOUNDS: maplibregl.LngLatBoundsLike = [
+  [-9.6, 35.9],
+  [4.6, 43.9],
+];
+
+export interface MapHandle {
+  flyToSpain: () => void;
+}
+
 interface Props {
   activeOverlays: string[];
   opacity: number;
@@ -35,24 +47,40 @@ interface Props {
   frameTime: number | null;
   timeInfo: Record<string, TimeInfo>;
   radar: RadarFrames | null;
+  initialView: View;
+  onViewChange: (view: View) => void;
+  onLoadingChange: (loading: boolean) => void;
+  onLayerError: () => void;
+  onLocateError: () => void;
 }
 
-export default function MapView({ activeOverlays, opacity, frameTime, timeInfo, radar }: Props) {
+const MapView = forwardRef<MapHandle, Props>(function MapView(props, handle) {
+  const { activeOverlays, opacity, frameTime, timeInfo, radar } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const shownTiles = useRef<Record<string, string>>({}); // last tile URL set per overlay
   const [ready, setReady] = useState(false);
 
-  // Create the map once, with every overlay registered but hidden.
+  // The map is created once; it calls the latest callbacks through this ref.
+  const callbacks = useRef(props);
+  callbacks.current = props;
+
+  useImperativeHandle(handle, () => ({
+    flyToSpain: () =>
+      mapRef.current?.fitBounds(SPAIN_BOUNDS, { padding: { top: 30, bottom: 130, left: 30, right: 30 } }),
+  }));
+
+  // Create the map once, with every satellite overlay registered but hidden.
   useEffect(() => {
     if (!container.current) return;
-    const map = new maplibregl.Map({
-      container: container.current,
-      style,
-      center: [-3.7, 40.2], // Spain
-      zoom: 5,
+    const { lat, lng, zoom } = callbacks.current.initialView;
+    const map = new maplibregl.Map({ container: container.current, style, center: [lng, lat], zoom });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    const locate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: false },
     });
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    locate.on("error", () => callbacks.current.onLocateError());
+    map.addControl(locate, "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
     map.on("load", () => {
@@ -73,6 +101,18 @@ export default function MapView({ activeOverlays, opacity, frameTime, timeInfo, 
         });
       }
       setReady(true);
+    });
+
+    map.on("moveend", () => {
+      const center = map.getCenter();
+      callbacks.current.onViewChange({ lat: center.lat, lng: center.lng, zoom: map.getZoom() });
+    });
+    map.on("dataloading", () => callbacks.current.onLoadingChange(true));
+    map.on("idle", () => callbacks.current.onLoadingChange(false));
+    map.on("error", (event) => {
+      // Only tile failures of our weather layers matter to the user
+      const sourceId = (event as unknown as { sourceId?: string }).sourceId;
+      if (sourceId && LAYER_IDS.includes(sourceId)) callbacks.current.onLayerError();
     });
 
     mapRef.current = map;
@@ -133,4 +173,6 @@ export default function MapView({ activeOverlays, opacity, frameTime, timeInfo, 
   }, [activeOverlays, opacity, ready, frameTime, timeInfo, radar]);
 
   return <div ref={container} className="map" />;
-}
+});
+
+export default MapView;

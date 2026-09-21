@@ -1,39 +1,64 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchProducts, fetchProviders, type Product, type Provider } from "./api";
+import { initialLang, messages, saveLang, type Lang } from "./i18n";
+import LayerPanel from "./LayerPanel";
+import Legend from "./Legend";
 import {
   DEFAULT_ACTIVE,
   FRAME_COUNT,
   FRAME_STEP_MS,
   OVERLAYS,
-  RAIN_RADAR,
   REFRESH_MS,
   fetchRadarFrames,
   fetchTimeInfo,
   type RadarFrames,
   type TimeInfo,
 } from "./layers";
-import MapView from "./MapView";
+import MapView, { type MapHandle } from "./MapView";
+import TimeBar from "./TimeBar";
+import { SPAIN_VIEW, parseUrlState, writeUrlState, type View } from "./urlState";
 
 const PLAY_INTERVAL_MS = 1000;
-
-function providerStatus(p: Provider): string {
-  if (!p.implemented) return "planned";
-  return p.enabled ? "active" : "needs configuration";
-}
-
-const formatTime = (ms: number) =>
-  new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+const NOTICE_MS = 8000;
 
 export default function App() {
+  // Link parameters (view, layers, language) are read once, at start
+  const initial = useMemo(() => parseUrlState(window.location.search), []);
+
+  const [lang, setLang] = useState<Lang>(() => initialLang(initial.lang));
+  const t = messages[lang];
+  const [activeOverlays, setActiveOverlays] = useState<string[]>(initial.layers ?? DEFAULT_ACTIVE);
+  const [view, setView] = useState<View>(initial.view ?? SPAIN_VIEW);
+  const [opacity, setOpacity] = useState(0.85);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
   const [providers, setProviders] = useState<Provider[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [activeOverlays, setActiveOverlays] = useState<string[]>(DEFAULT_ACTIVE);
-  const [opacity, setOpacity] = useState(0.85);
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const [timeInfo, setTimeInfo] = useState<Record<string, TimeInfo>>({});
   const [radar, setRadar] = useState<RadarFrames | null>(null);
   const [frameIndex, setFrameIndex] = useState(FRAME_COUNT - 1); // last = latest image
   const [playing, setPlaying] = useState(false);
+
+  const mapRef = useRef<MapHandle>(null);
+  const noticeTimer = useRef<number>();
+
+  // Keep the address bar in sync so the current view can be shared
+  useEffect(() => writeUrlState({ view, layers: activeOverlays, lang }), [view, activeOverlays, lang]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.title = t.appName;
+    saveLang(lang);
+  }, [lang, t.appName]);
+
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
+  }, []);
 
   useEffect(() => {
     Promise.all([fetchProviders(), fetchProducts()])
@@ -41,10 +66,10 @@ export default function App() {
         setProviders(prov);
         setProducts(prod);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => setApiError(e.message));
   }, []);
 
-  // Which satellite images exist? Asked at start and then periodically, so the newest
+  // Which satellite and radar images exist? Asked at start and then periodically, so the newest
   // frame appears without reloading the page.
   const loadTimes = useCallback(async () => {
     const [results, radarFrames] = await Promise.all([
@@ -72,7 +97,10 @@ export default function App() {
     if (radarEnd !== undefined) ends.push(radarEnd);
     if (ends.length === 0) return [];
     const newest = Math.max(...ends);
-    return Array.from({ length: FRAME_COUNT }, (_, i) => newest - (FRAME_COUNT - 1 - i) * FRAME_STEP_MS);
+    return Array.from(
+      { length: FRAME_COUNT },
+      (_, i) => newest - (FRAME_COUNT - 1 - i) * FRAME_STEP_MS,
+    );
   }, [timeInfo, radar]);
 
   useEffect(() => {
@@ -90,104 +118,73 @@ export default function App() {
     );
 
   const frameTime = frames.length > 0 ? frames[frameIndex] : null;
-  const isLatest = frameIndex === FRAME_COUNT - 1;
 
   return (
     <div className="layout">
-      <aside className="sidebar">
-        <h1>Weather Radar Platform</h1>
-
-        <h2>Satellite layers (EUMETSAT)</h2>
-        {OVERLAYS.map((o) => (
-          <div key={o.id}>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={activeOverlays.includes(o.id)}
-                onChange={() => toggle(o.id)}
-              />
-              {o.label}
-            </label>
-            {o.note && <small className="note">{o.note}</small>}
-          </div>
-        ))}
-        <div>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={activeOverlays.includes(RAIN_RADAR.id)}
-              onChange={() => toggle(RAIN_RADAR.id)}
-            />
-            {RAIN_RADAR.label}
-          </label>
-          <small className="note">{RAIN_RADAR.note}</small>
-        </div>
-        <label className="check">
-          Opacity
-          <input
-            type="range"
-            min={0.1}
-            max={1}
-            step={0.05}
-            value={opacity}
-            onChange={(e) => setOpacity(Number(e.target.value))}
-          />
-        </label>
-
-        <h2>Time</h2>
-        <div className="check">
-          <button type="button" disabled={frames.length === 0} onClick={() => setPlaying((p) => !p)}>
-            {playing ? "Pause" : "Play"}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={FRAME_COUNT - 1}
-            step={1}
-            value={frameIndex}
-            disabled={frames.length === 0}
-            onChange={(e) => {
-              setPlaying(false);
-              setFrameIndex(Number(e.target.value));
-            }}
-          />
-        </div>
-        <small>
-          {frameTime === null
-            ? "Loading available times…"
-            : `${formatTime(frameTime)}${isLatest ? " (latest)" : ""}. Last 3 hours, 15-minute steps.`}
-        </small>
-
-        {error && <p className="error">API error: {error}</p>}
-
-        <h2>Data sources</h2>
-        <ul>
-          {providers.map((p) => (
-            <li key={p.name}>
-              {p.name} <span className="tag">{providerStatus(p)}</span>
-            </li>
-          ))}
-        </ul>
-
-        <h2>Latest ingested products</h2>
-        {products.length === 0 && !error && <p>Nothing ingested yet.</p>}
-        <ul>
-          {products.map((p) => (
-            <li key={p.id}>
-              {p.provider}/{p.product_type}
-              <br />
-              <small>{new Date(p.observed_at).toLocaleString()}</small>
-            </li>
-          ))}
-        </ul>
-      </aside>
-      <MapView
+      {panelOpen && <div className="backdrop" onClick={() => setPanelOpen(false)} />}
+      <LayerPanel
+        t={t}
+        lang={lang}
+        className={panelOpen ? "open" : ""}
         activeOverlays={activeOverlays}
         opacity={opacity}
-        frameTime={frameTime}
-        timeInfo={timeInfo}
-        radar={radar}
+        providers={providers}
+        products={products}
+        apiError={apiError}
+        onToggle={toggle}
+        onPreset={(ids) => {
+          setActiveOverlays(ids);
+          setPanelOpen(false);
+        }}
+        onOpacity={setOpacity}
+        onLang={() => setLang((l) => (l === "es" ? "en" : "es"))}
+        onGoToSpain={() => {
+          mapRef.current?.flyToSpain();
+          setPanelOpen(false);
+        }}
+        onClose={() => setPanelOpen(false)}
       />
+
+      <main className="stage">
+        <MapView
+          ref={mapRef}
+          activeOverlays={activeOverlays}
+          opacity={opacity}
+          frameTime={frameTime}
+          timeInfo={timeInfo}
+          radar={radar}
+          initialView={initial.view ?? SPAIN_VIEW}
+          onViewChange={setView}
+          onLoadingChange={setMapLoading}
+          onLayerError={() => showNotice(t.layerError)}
+          onLocateError={() => showNotice(t.locateError)}
+        />
+
+        <button type="button" className="panel-toggle" onClick={() => setPanelOpen(true)}>
+          ☰ {t.layersButton}
+        </button>
+        {mapLoading && (
+          <div className="pill" role="status">
+            <span className="spinner" aria-hidden="true" /> {t.loadingMap}
+          </div>
+        )}
+        {notice && (
+          <div className="toast" role="alert">
+            {notice}
+          </div>
+        )}
+
+        <Legend activeOverlays={activeOverlays} t={t} />
+        <TimeBar
+          frames={frames}
+          index={frameIndex}
+          playing={playing}
+          lang={lang}
+          t={t}
+          onIndex={setFrameIndex}
+          onPlaying={setPlaying}
+        />
+      </main>
     </div>
   );
 }

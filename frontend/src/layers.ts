@@ -3,90 +3,51 @@
 // ("start/end/step") that lets us request past images and animate them.
 const EUMETVIEW = "https://view.eumetsat.int/geoserver";
 
+export type LayerGroup = "satellite" | "rain";
+
 export interface Overlay {
   id: string;
-  label: string;
   wmsLayer: string; // "<workspace>:<layer>"
-  note?: string; // short hint shown under the label
+  group: LayerGroup;
 }
 
-// Order matters: later entries are drawn on top of earlier ones.
+// Order matters: later entries are drawn on top of earlier ones. Labels and descriptions live in
+// i18n.ts, keyed by id.
 export const OVERLAYS: Overlay[] = [
-  {
-    id: "mtg-geocolour",
-    label: "Geo Colour (MTG)",
-    wmsLayer: "mtg_fd:rgb_geocolour",
-    note: "True colour by day, infrared and city lights at night.",
-  },
-  { id: "msg-ir108", label: "Infrared 10.8 µm (MSG)", wmsLayer: "msg_fes:ir108" },
-  { id: "mtg-ir105", label: "Infrared 10.5 µm, high resolution (MTG)", wmsLayer: "mtg_fd:ir105_hrfi" },
-  {
-    id: "msg-airmass",
-    label: "Airmass RGB (MSG)",
-    wmsLayer: "msg_fes:rgb_airmass",
-    note: "Distinguishes air masses; used to follow storm systems.",
-  },
-  {
-    id: "msg-precip",
-    label: "Precipitation, blended (MSG)",
-    wmsLayer: "msg_fes:h60b",
-    note: "Drawn only where rain is detected; light rain is pale.",
-  },
+  { id: "mtg-geocolour", wmsLayer: "mtg_fd:rgb_geocolour", group: "satellite" },
+  { id: "msg-ir108", wmsLayer: "msg_fes:ir108", group: "satellite" },
+  { id: "mtg-ir105", wmsLayer: "mtg_fd:ir105_hrfi", group: "satellite" },
+  { id: "msg-airmass", wmsLayer: "msg_fes:rgb_airmass", group: "satellite" },
+  { id: "msg-precip", wmsLayer: "msg_fes:h60b", group: "rain" },
 ];
 
 // Rain radar over Spain and the rest of the world: RainViewer publishes a composite of national
-// radars as ready-made tiles (free public API, CORS enabled, attribution required). It keeps
-// about the last 2 hours in 10-minute steps. It complements our own ingestion (NEXRAD, AEMET).
-export const RAIN_RADAR = {
-  id: "rain-radar",
-  label: "Rain radar (RainViewer)",
-  note: "Third-party composite of national radars; last 2 hours.",
-};
+// radars as ready-made tiles (free public API, CORS enabled). It keeps about the last 2 hours in
+// 10-minute steps. It complements our own ingestion (NEXRAD, AEMET).
+export const RAIN_RADAR = { id: "rain-radar", group: "rain" as LayerGroup };
+
+/** Every layer the user can switch, in the order the panel lists them. */
+export const UI_LAYERS: { id: string; group: LayerGroup }[] = [
+  ...OVERLAYS.map(({ id, group }) => ({ id, group })),
+  RAIN_RADAR,
+];
+export const LAYER_IDS = UI_LAYERS.map((l) => l.id);
 
 export const DEFAULT_ACTIVE = ["mtg-geocolour", RAIN_RADAR.id];
 
+// Quick views: sets of layers that answer a common question.
+export const PRESETS: Record<"clouds" | "rain" | "storms", string[]> = {
+  clouds: ["mtg-geocolour"],
+  rain: ["mtg-geocolour", RAIN_RADAR.id],
+  storms: ["msg-ir108", RAIN_RADAR.id],
+};
+
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
-const RADAR_COLOR_SCHEME = 6; // NEXRAD Level III colours (green to red), the usual radar look
+// RainViewer's free tiles only come in one palette ("Universal Blue", id 2); other ids are ignored.
+const RADAR_COLOR_SCHEME = 2;
 export const RADAR_MAX_ZOOM = 7; // the free tiles stop at this zoom: MapLibre enlarges beyond it
 
-export interface RadarFrame {
-  time: number; // epoch ms
-  path: string;
-}
-
-export interface RadarFrames {
-  host: string;
-  frames: RadarFrame[]; // oldest first
-}
-
-export function parseRadarFrames(data: {
-  host: string;
-  radar: { past: { time: number; path: string }[] };
-}): RadarFrames {
-  const frames = data.radar.past
-    .map((f) => ({ time: f.time * 1000, path: f.path }))
-    .sort((a, b) => a.time - b.time);
-  return { host: data.host, frames };
-}
-
-export async function fetchRadarFrames(): Promise<RadarFrames> {
-  const response = await fetch(RAINVIEWER_API);
-  if (!response.ok) throw new Error(`rainviewer: HTTP ${response.status}`);
-  return parseRadarFrames(await response.json());
-}
-
-/** Newest radar image at or before `time`; null when `time` is older than the first frame. */
-export function radarFrameAt(radar: RadarFrames, time: number): RadarFrame | null {
-  let found: RadarFrame | null = null;
-  for (const frame of radar.frames) if (frame.time <= time) found = frame;
-  return found;
-}
-
-export function radarTiles(radar: RadarFrames, frame: RadarFrame): string[] {
-  return [`${radar.host}${frame.path}/256/{z}/{x}/{y}/${RADAR_COLOR_SCHEME}/1_1.png`];
-}
-
-// How often we ask the server for newer images.
+// How often we ask the servers for newer images.
 export const REFRESH_MS = 10 * 60 * 1000;
 
 // Animation: last 3 hours in 15-minute steps.
@@ -148,4 +109,46 @@ export function wmsTiles(wmsLayer: string, time?: number): string[] {
   // Without `time` the server returns its latest image.
   if (time !== undefined) params.push(`time=${new Date(time).toISOString().replace(".000Z", "Z")}`);
   return [`${EUMETVIEW}/ows?${params.join("&")}`];
+}
+
+/** Colour-scale image published by EUMETSAT for a layer (only some layers have one). */
+export function legendUrl(wmsLayer: string): string {
+  return `${EUMETVIEW}/ows?service=WMS&version=1.3.0&request=GetLegendGraphic&format=image/png&layer=${wmsLayer}`;
+}
+
+export interface RadarFrame {
+  time: number; // epoch ms
+  path: string;
+}
+
+export interface RadarFrames {
+  host: string;
+  frames: RadarFrame[]; // oldest first
+}
+
+export function parseRadarFrames(data: {
+  host: string;
+  radar: { past: { time: number; path: string }[] };
+}): RadarFrames {
+  const frames = data.radar.past
+    .map((f) => ({ time: f.time * 1000, path: f.path }))
+    .sort((a, b) => a.time - b.time);
+  return { host: data.host, frames };
+}
+
+export async function fetchRadarFrames(): Promise<RadarFrames> {
+  const response = await fetch(RAINVIEWER_API);
+  if (!response.ok) throw new Error(`rainviewer: HTTP ${response.status}`);
+  return parseRadarFrames(await response.json());
+}
+
+/** Newest radar image at or before `time`; null when `time` is older than the first frame. */
+export function radarFrameAt(radar: RadarFrames, time: number): RadarFrame | null {
+  let found: RadarFrame | null = null;
+  for (const frame of radar.frames) if (frame.time <= time) found = frame;
+  return found;
+}
+
+export function radarTiles(radar: RadarFrames, frame: RadarFrame): string[] {
+  return [`${radar.host}${frame.path}/256/{z}/{x}/{y}/${RADAR_COLOR_SCHEME}/1_1.png`];
 }
