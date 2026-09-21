@@ -104,9 +104,10 @@ aws.iam.RolePolicy(
                     "Resource": f"{bucket_arn}/*",
                 },
                 {
+                    # Database password and, once stored by the deploy workflow, the AEMET key
                     "Effect": "Allow",
                     "Action": "ssm:GetParameter",
-                    "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter{pg_param_name}",
+                    "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter/{PROJECT}/*",
                 },
             ],
         }
@@ -255,6 +256,12 @@ aws.iam.RolePolicy(
                     "Effect": "Allow",
                     "Action": "s3:PutObject",
                     "Resource": f"{bucket_arn}/bundle/*",
+                },
+                {
+                    # The workflow stores the AEMET key (GitHub secret) here for the instance
+                    "Effect": "Allow",
+                    "Action": "ssm:PutParameter",
+                    "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter/{PROJECT}/aemet_api_key",
                 },
                 {
                     "Effect": "Allow",

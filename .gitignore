@@ -2,6 +2,9 @@
 .env
 *.pem
 
+# Downloaded data samples
+backend/samples/
+
 # Python
 __pycache__/
 *.pyc

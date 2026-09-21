@@ -17,5 +17,8 @@ class Settings(BaseSettings):
     nexrad_sites: str = "KTLX,KOKX"  # comma-separated radar site ids
     nexrad_per_site: int = 3  # newest volumes to consider per site on every run
 
+    # AEMET OpenData (Spain). Free key from https://opendata.aemet.es. Empty = provider disabled.
+    aemet_api_key: str = ""
+
 
 settings = Settings()

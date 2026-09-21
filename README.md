@@ -7,23 +7,47 @@ NOAA, EUMETSAT and Copernicus. TFG, Software Engineering, University of Oviedo.
 
 ```
                  ┌────────────────────── EC2 (Docker Compose) ──────────────────────┐
- browser ──HTTP──▶ Caddy ─┬─ /api/*  ─▶ api (FastAPI) ──▶ PostgreSQL/PostGIS         │
-                          └─ /       ─▶ web (React, nginx)                           │
-                          worker (ingestion) ─▶ providers ─▶ S3 (raw + processed)    │
+ browser ─HTTPS─▶ Caddy ─┬─ /api/*  ─▶ api (FastAPI) ──▶ PostgreSQL/PostGIS          │
+                         └─ /       ─▶ web (React, nginx)                            │
+                         worker (ingestion) ─▶ providers ─▶ S3 (raw + processed)     │
                  └───────────────────────────────────────────────────────────────────┘
  GitHub Actions ──OIDC──▶ AWS: build images → GHCR → SSM Run Command → deploy.sh on the VM
  Pulumi (infra/): EC2, Elastic IP, S3, SSM parameter, IAM roles, GitHub OIDC provider
 ```
 
-| Folder | What |
-|---|---|
-| `backend/` | Python / FastAPI. One image, two entrypoints: `app.api.main` (API) and `app.ingest.worker` |
-| `backend/app/providers/` | One class per data source (`noaa_nexrad` works; `eumetsat`, `copernicus` are stubs) |
-| `frontend/` | React + TypeScript + Vite + MapLibre GL |
-| `infra/` | Pulumi (Python) for AWS |
-| `deploy/` | Caddyfile and `deploy.sh` (runs on the VM) |
-| `loadtest/` | k6 script |
-| `.github/workflows/` | `ci.yml` (PRs / branches), `deploy.yml` (main → AWS), `infra.yml` (Pulumi) |
+## Documentation of each part
+
+Every part has its own README with the technologies used, **why** they were chosen, how the part interacts with the rest, and its known limitations.
+
+| Part | What it is | Documentation |
+|---|---|---|
+| Backend | Python / FastAPI API and ingestion worker (one image, two entrypoints) | [backend/README.md](backend/README.md) |
+| Frontend | React + TypeScript + Vite + MapLibre single-page app | [frontend/README.md](frontend/README.md) |
+| Containers and deployment | Docker Compose stack, Caddy proxy, `deploy.sh` | [deploy/README.md](deploy/README.md) |
+| Infrastructure | Pulumi (Python) program for AWS | [infra/README.md](infra/README.md) |
+| CI/CD | GitHub Actions workflows | [.github/workflows/README.md](.github/workflows/README.md) |
+| Load testing | k6 script | [loadtest/README.md](loadtest/README.md) |
+
+## How the parts interact
+
+**1. A user opens the site.** The browser connects over HTTPS to **Caddy**, the only publicly exposed container. Caddy serves the React app from the **web** container for `/`, and forwards `/api/*` to the **API**. The React app calls the API using relative URLs, so everything is one origin. The API queries **PostgreSQL** and returns JSON, and MapLibre draws the map using OpenStreetMap tiles.
+
+**2. Data is ingested (in the background).** The **worker** wakes up every few minutes and asks each **provider** (today NOAA NEXRAD, later EUMETSAT / Copernicus) what is new. It downloads the new files, uploads the raw files to **S3**, and records each one in **PostgreSQL**. The API then exposes those records to the frontend.
+
+**3. A new version is released.** A push to `main` triggers **GitHub Actions**: tests, then Docker images are built and pushed to **GHCR**. The workflow authenticates to AWS with OIDC (no stored keys), uploads the compose files to S3 and, through **SSM**, tells the VM to run `deploy.sh`, which pulls the new images and restarts the containers.
+
+**4. The environment itself changes.** Edits to `infra/` are applied with **Pulumi**, which creates or modifies the AWS resources (VM, bucket, roles, secrets). The VM, the pipeline and the application are therefore each defined in code and versioned in the same repository.
+
+| Interaction | Mechanism | Why |
+|---|---|---|
+| Browser → app | HTTPS to Caddy, path-based routing | One entry point; automatic certificates; no CORS |
+| Frontend → backend | JSON over HTTP (`/api`) | Simple, typed, cacheable |
+| Backend → database | SQLAlchemy / PostgreSQL | Relational metadata with spatial support |
+| Worker → S3 | boto3 with the EC2 instance role | No credentials in code or images |
+| Worker → data providers | Public APIs / open data buckets | Source of the meteorological data |
+| GitHub → AWS | OIDC short-lived credentials | No long-lived secrets in GitHub |
+| GitHub → VM | SSM Run Command | No SSH access needed |
+| Pulumi → AWS | AWS API, state in S3 | Reproducible, reviewable infrastructure |
 
 ## Technologies and their role
 
@@ -61,8 +85,9 @@ NOAA, EUMETSAT and Copernicus. TFG, Software Engineering, University of Oviedo.
 | | Ruff | Python linter, run in CI. |
 | | k6 | Load testing (`loadtest/smoke.js`). |
 | **Data sources** | NOAA NEXRAD (AWS Open Data) | US weather radar volumes; the first working provider, used to build and validate the pipeline. |
-| | AEMET OpenData *(planned)* | Spanish national weather service: radar for Spain. |
-| | EUMETSAT Data Store *(planned)* | European satellite products (MSG / MTG). |
+| | EUMETSAT EUMETView WMS | Meteosat (MSG/MTG) satellite imagery over Spain drawn directly in the map, with a time animation; no API key. |
+| | AEMET OpenData *(in progress)* | Spanish national weather service: georeferenced radar for Spain, to be ingested by the worker. |
+| | EUMETSAT Data Store *(planned)* | Download the satellite files themselves for our own processing. |
 | | Copernicus CDS *(planned)* | Reanalysis and model data (e.g. ERA5) for overlays. |
 | **Planned** | Py-ART, xarray, satpy | Decode radar / satellite formats and render map tiles. |
 | | Alembic | Database migrations once the schema evolves. |

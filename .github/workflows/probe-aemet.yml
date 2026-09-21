@@ -1,0 +1,30 @@
+name: Probe AEMET
+
+# Manual, one-off: calls AEMET's radar endpoints with the AEMET_API_KEY secret and prints what
+# they return (formats, georeferencing, timestamps). Read the log to design the provider.
+# The key is never printed. Sample files are attached to the run as an artifact for 7 days.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install tifffile numpy
+      - run: python backend/scripts/probe_aemet.py
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aemet-samples
+          path: backend/samples/
+          retention-days: 7
+          if-no-files-found: ignore

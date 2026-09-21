@@ -8,7 +8,8 @@ export interface Product {
 
 export interface Provider {
   name: string;
-  implemented: boolean;
+  implemented: boolean; // the code exists
+  enabled: boolean; // implemented and configured (e.g. API key present): the worker runs it
 }
 
 async function get<T>(path: string): Promise<T> {

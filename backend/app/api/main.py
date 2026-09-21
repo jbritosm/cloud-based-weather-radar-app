@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.db import Product, get_session, init_db
-from app.providers import REGISTRY
+from app.providers import REGISTRY, is_enabled
 
 
 @asynccontextmanager
@@ -27,7 +27,8 @@ app = FastAPI(
 
 class ProviderOut(BaseModel):
     name: str
-    implemented: bool
+    implemented: bool  # the code exists
+    enabled: bool  # implemented and configured: the worker runs it
 
 
 class ProductOut(BaseModel):
@@ -51,7 +52,10 @@ def health(session: Session = Depends(get_session)) -> dict[str, str]:
 
 @app.get("/api/providers", response_model=list[ProviderOut])
 def providers() -> list[ProviderOut]:
-    return [ProviderOut(name=n, implemented=cls.implemented) for n, cls in REGISTRY.items()]
+    return [
+        ProviderOut(name=n, implemented=cls.implemented, enabled=is_enabled(cls))
+        for n, cls in REGISTRY.items()
+    ]
 
 
 @app.get("/api/products", response_model=list[ProductOut])

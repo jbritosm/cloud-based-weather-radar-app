@@ -20,6 +20,11 @@ class Provider(ABC):
     name: str
     implemented: bool = False
 
+    @classmethod
+    def is_configured(cls) -> bool:
+        """False when the provider needs credentials that are missing; the worker skips it."""
+        return True
+
     @abstractmethod
     def list_latest(self) -> list[ProductRef]:
         """Newest products available at the source."""

@@ -9,8 +9,10 @@ from app.db import Product, SessionLocal
 def test_health_and_providers():
     with TestClient(app) as client:  # `with` runs the lifespan (creates tables)
         assert client.get("/api/health").json() == {"status": "ok"}
-        names = {p["name"] for p in client.get("/api/providers").json()}
-        assert {"noaa_nexrad", "eumetsat", "copernicus"} <= names
+        providers = {p["name"]: p for p in client.get("/api/providers").json()}
+        assert {"noaa_nexrad", "aemet_radar", "eumetsat", "copernicus"} <= providers.keys()
+        assert providers["noaa_nexrad"]["enabled"] is True
+        assert providers["aemet_radar"]["enabled"] is False  # not implemented yet
 
 
 def test_products_listing_filters_by_provider():

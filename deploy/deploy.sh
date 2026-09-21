@@ -21,6 +21,10 @@ aws s3 sync "s3://${BUCKET}/bundle/" /opt/tfg/
 POSTGRES_PASSWORD="$(aws ssm get-parameter --name "$PG_PARAM" --with-decryption \
   --query Parameter.Value --output text)"
 
+# Optional: only present once the AEMET_API_KEY GitHub secret has been stored by the workflow.
+AEMET_API_KEY="$(aws ssm get-parameter --name "/tfg/aemet_api_key" --with-decryption \
+  --query Parameter.Value --output text 2>/dev/null || true)"
+
 umask 077
 cat > .env <<EOF
 GHCR_OWNER=${GHCR_OWNER}
@@ -29,6 +33,7 @@ SITE_ADDRESS=${SITE_ADDRESS}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 S3_BUCKET=${BUCKET}
 AWS_REGION=${REGION}
+AEMET_API_KEY=${AEMET_API_KEY}
 EOF
 
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"

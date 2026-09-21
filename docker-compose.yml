@@ -12,6 +12,7 @@ x-backend: &backend
     AWS_REGION: ${AWS_REGION:-eu-west-1}
     INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-300}
     NEXRAD_SITES: ${NEXRAD_SITES:-KTLX,KOKX}
+    AEMET_API_KEY: ${AEMET_API_KEY:-}
 
 services:
   db:
