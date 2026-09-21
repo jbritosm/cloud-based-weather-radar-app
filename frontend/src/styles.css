@@ -8,6 +8,9 @@
   --muted: #5d6b7a;
   --line: #dde3e9;
   --accent: #0b6fbf;
+  /* Accent as TEXT on the pale accent background: #0b6fbf on #e3f0fb is only 4.49:1, just under the
+     4.5:1 WCAG AA minimum; this darker blue gives 6:1. */
+  --accent-strong: #0a5a9c;
   --accent-soft: #e3f0fb;
   --on-accent: #ffffff;
   --danger: #b00020;
@@ -26,6 +29,7 @@
   --muted: #9aa8b6;
   --line: #2b3641;
   --accent: #4aa3f0;
+  --accent-strong: #4aa3f0; /* already high contrast on the dark background */
   --accent-soft: #16344f;
   --on-accent: #08131d;
   --danger: #ff6b81;
@@ -94,8 +98,8 @@ a { color: var(--accent); }
   border-radius: 999px;
   padding: 0.35rem 0.85rem;
 }
-.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.chip.install { border-color: var(--accent); color: var(--accent); }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); font-weight: 600; }
+.chip.install { border-color: var(--accent); color: var(--accent-strong); }
 
 .layer { margin: 0.35rem 0; }
 .check { display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; }
@@ -213,18 +217,22 @@ a { color: var(--accent); }
 .timebar-label { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; font-size: 0.92rem; }
 .timebar-main input[type="range"] { width: 100%; margin: 0.25rem 0 0; }
 .timebar-ticks { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); }
-.badge { background: var(--accent-soft); color: var(--accent); border-radius: 4px; padding: 0 0.4rem; font-size: 0.75rem; font-weight: 600; }
+.badge { background: var(--accent-soft); color: var(--accent-strong); border-radius: 4px; padding: 0 0.4rem; font-size: 0.75rem; font-weight: 600; }
 .now {
   flex: none;
   border: 1px solid var(--accent);
   background: var(--bg);
-  color: var(--accent);
+  color: var(--accent-strong);
   border-radius: 999px;
   padding: 0.35rem 0.9rem;
   font-weight: 600;
 }
 
-/* ---------- MapLibre's own controls follow the theme ---------- */
+/* ---------- MapLibre's own controls ---------- */
+/* Links must not rely on colour alone (WCAG 1.4.1): underline the attribution links */
+.maplibregl-ctrl-attrib a { text-decoration: underline; }
+
+/* ...and they follow the theme */
 :root[data-theme="dark"] .maplibregl-ctrl-group { background: var(--bg-soft); }
 :root[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: var(--line); }
 :root[data-theme="dark"] .maplibregl-ctrl button .maplibregl-ctrl-icon { filter: invert(1) brightness(1.4); }

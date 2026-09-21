@@ -6,8 +6,10 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import Product, get_session, init_db
 from app.providers import REGISTRY, is_enabled
+from app.ratelimit import RateLimitMiddleware
 
 
 @asynccontextmanager
@@ -23,6 +25,7 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
+app.add_middleware(RateLimitMiddleware, limit_per_minute=settings.rate_limit_per_minute)
 
 
 class ProviderOut(BaseModel):

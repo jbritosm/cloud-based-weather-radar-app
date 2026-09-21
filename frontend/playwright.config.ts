@@ -19,7 +19,7 @@ export default defineConfig({
     serviceWorkers: "block", // only the PWA project lets the service worker run
   },
   projects: [
-    { name: "desktop", testMatch: /app\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } },
+    { name: "desktop", testMatch: /(app|a11y|security)\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } },
     { name: "mobile", testMatch: /mobile\.spec\.ts/, use: { ...devices["Pixel 5"] } },
     { name: "pwa", testMatch: /pwa\.spec\.ts/, use: { ...devices["Desktop Chrome"], serviceWorkers: "allow" } },
   ],

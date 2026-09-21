@@ -11,6 +11,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 RUN useradd --create-home appuser
 USER appuser

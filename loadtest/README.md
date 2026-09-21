@@ -39,6 +39,16 @@ Every request is tagged by endpoint, so each one has its own threshold and a slo
 | `load` (default) | ramps to 20 users, holds 1 min | Does it cope with the expected university-level traffic? |
 | `stress` | ramps to 100 users, holds 1 min | Where does it start to hurt? |
 
+## Before you run it against the real server: the rate limiter
+
+Since the results below were taken, the API got a **per-client rate limit** (600 requests per minute per address, see the backend README). A load test comes from one address, so it will hit that limit and receive `429` responses: that is the limiter *working*, but it means the test would measure the limiter, not the server. To test the server's own capacity:
+
+1. Set the GitHub variable `RATE_LIMIT_PER_MINUTE` to `0` and deploy (re-run the Deploy workflow).
+2. Run the test.
+3. Set the variable back (or delete it, the default is 600) and deploy again.
+
+The `load` profile makes about 28 API requests per second from one address, so it would be limited at the default; a normal visitor makes a handful per minute. The limiter itself was verified on the real stack: a flood got the first few requests through and then `429` with `Retry-After`, `/api/health` stayed available, and the API answered again a few seconds later.
+
 ## Run it
 
 ```powershell

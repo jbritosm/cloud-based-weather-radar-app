@@ -39,7 +39,8 @@ ci ──▶ build ──▶ deploy
 3. **deploy**:
    - Assume the `tfg-gha-deploy` AWS role through OIDC.
    - Upload `docker-compose*.yml`, `Caddyfile` and `deploy.sh` to `s3://tfg-data-<account>-<region>/bundle/`.
-   - Copy the `AEMET_API_KEY` GitHub secret into SSM Parameter Store (`/tfg/aemet_api_key`, SecureString) so the instance can read it; the key is never placed in the command text or logs. Skipped if the secret is not set.
+   - Upload the whole `deploy/` folder (Caddyfile and the helper scripts) and the compose files to S3.
+   - Copy each **provider key** that exists as a GitHub secret (`AEMET_API_KEY`, `EUMETSAT_CONSUMER_KEY`, `EUMETSAT_CONSUMER_SECRET`, `CDS_API_KEY`) into SSM Parameter Store as a SecureString under `/tfg/secrets/<name>`, so the instance can read them; the keys are never placed in the command text or logs. Unset secrets are skipped (an existing parameter is not deleted). Adding a key is one word in the loop of this step, plus the secret.
    - Find the running instance by its `Project=tfg` tag.
    - Send an SSM command that downloads and runs `deploy.sh <sha> <owner> <site>`, then wait for it and print its output. The job fails if the script fails.
 
@@ -47,7 +48,7 @@ ci ──▶ build ──▶ deploy
 
 ### `infra.yml`: infrastructure changes
 **Trigger:** push to `main` that changes `infra/**` (or manual run).
-Assumes the `tfg-gha-infra` role and runs `pulumi up` against the S3 state backend. The very first apply is done locally, because it creates the roles this workflow assumes.
+Assumes the `tfg-gha-infra` role, runs **`pulumi preview --diff`** (so the log shows what will change) and then `pulumi up` against the S3 state backend. The alert email and budget come from the GitHub variables `ALERT_EMAIL` and `MONTHLY_BUDGET_USD`, so no personal address is stored in the repository. The very first apply was done locally, because it creates the roles this workflow assumes.
 
 ### `probe-aemet.yml`: one-off data probe
 **Trigger:** manual only ("Run workflow" in the Actions tab; the file must be on `main`).
@@ -62,6 +63,11 @@ Runs `backend/scripts/probe_aemet.py` with the `AEMET_API_KEY` secret and prints
 | `SITE_ADDRESS` | variable | Domain for HTTPS (`weatherradarapp.duckdns.org`); empty means HTTP on the IP |
 | `PULUMI_CONFIG_PASSPHRASE` | secret | Decrypts the Pulumi state |
 | `AEMET_API_KEY` | secret | Free AEMET OpenData key (Spanish radar); optional, the AEMET provider stays disabled without it |
+| `EUMETSAT_CONSUMER_KEY`, `EUMETSAT_CONSUMER_SECRET` | secrets | Free pair from api.eumetsat.int/api-key. **Currently unused: the EUMETSAT provider is switched off in the code** until keys can be obtained; setting them changes nothing yet |
+| `CDS_API_KEY` | secret | Copernicus CDS personal access token (your CDS profile page); optional |
+| `ALERT_EMAIL` | variable | Where CloudWatch alarms and the budget alert are emailed. Optional but recommended |
+| `MONTHLY_BUDGET_USD` | variable | Monthly budget for the alert (default 10) |
+| `RATE_LIMIT_PER_MINUTE` | variable | API requests per minute per client address (default 600). Set `0` before load-testing the server |
 
 `GITHUB_TOKEN` is provided automatically.
 
@@ -70,6 +76,10 @@ Runs `backend/scripts/probe_aemet.py` with the `AEMET_API_KEY` secret and prints
 - Workflows request only the permissions they need (`contents: read`, `packages: write`, `id-token: write`).
 - The AWS roles trust only workflows running on **`main` of this repository**, so a pull request from a fork cannot obtain AWS access.
 - The deploy role is narrow (S3 bundle upload and SSM on instances tagged `Project=tfg`). The infra role is broad by necessity, protected by the same trust condition.
+
+## Dependency updates (Dependabot)
+
+`.github/dependabot.yml` opens a pull request weekly when a Python package (backend, infra), an npm package, a GitHub Action, a Docker base image or a Compose image has a new version. Minor and patch updates are grouped into one pull request per ecosystem to keep the noise low, and every pull request runs the whole CI, so an update that breaks something is visible before it is merged. Playwright is only updated deliberately, because the CI browsers must match its version.
 
 ## Known limitations
 

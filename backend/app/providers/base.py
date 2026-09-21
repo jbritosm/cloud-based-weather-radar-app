@@ -19,6 +19,9 @@ class Provider(ABC):
 
     name: str
     implemented: bool = False
+    # Seconds between checks for this source; 0 = the worker's default (INGEST_INTERVAL_SECONDS).
+    # Each provider runs in its own thread, so a slow source never delays the others.
+    poll_seconds: int = 0
 
     @classmethod
     def is_configured(cls) -> bool:

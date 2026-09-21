@@ -1,7 +1,43 @@
+# Global options: how long Caddy waits for slow or stalled clients. Without limits a client that
+# opens a connection and sends nothing (a "slowloris" attack) can hold it, and the connections of a
+# small server, forever.
+{
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 10s
+			write 30s
+			idle 2m
+		}
+	}
+}
+
 # SITE_ADDRESS=:80            -> plain HTTP (local, or AWS without a domain)
 # SITE_ADDRESS=tfg.example.com -> Caddy obtains a Let's Encrypt certificate automatically
 {$SITE_ADDRESS::80} {
 	encode gzip
+
+	# Security headers on every response. The Content Security Policy (which scripts, images and
+	# connections the page may use) travels inside index.html: see frontend/csp.ts.
+	header {
+		# HTTPS only, for a year (browsers ignore this header over plain HTTP)
+		Strict-Transport-Security "max-age=31536000"
+		# Never guess a file's type: a text file must not be run as a script
+		X-Content-Type-Options "nosniff"
+		# Never show this site inside another site's frame (clickjacking)
+		X-Frame-Options "DENY"
+		# Send other sites only the origin, never the full address with the map position
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The map may ask for the user's location; nothing else sensitive is needed
+		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+	}
+
+	# The platform is read-only: nothing legitimate sends a large body
+	request_body {
+		max_size 1MB
+	}
 
 	handle /api/* {
 		reverse_proxy api:8000

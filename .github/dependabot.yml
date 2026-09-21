@@ -1,0 +1,42 @@
+# Dependabot opens a pull request when a dependency, a GitHub Action or a Docker base image has a
+# new version. Each pull request runs the whole CI (ci.yml), so an update that breaks something is
+# visible before it is merged. Weekly and grouped, to keep the noise low.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule: { interval: weekly }
+    groups:
+      python-backend: { update-types: [minor, patch] }
+
+  - package-ecosystem: pip
+    directory: /infra
+    schedule: { interval: weekly }
+    groups:
+      python-infra: { update-types: [minor, patch] }
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    groups:
+      npm-frontend: { update-types: [minor, patch] }
+    ignore:
+      # Kept in step with the Playwright container/browsers used in CI: update it deliberately
+      - dependency-name: "@playwright/test"
+        update-types: ["version-update:semver-minor"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly }

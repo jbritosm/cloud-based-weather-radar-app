@@ -5,6 +5,7 @@ GitHub Actions (via OIDC, no long-lived keys) deploy the app and run this very p
 """
 
 import json
+import os
 
 import pulumi
 import pulumi_aws as aws
@@ -17,6 +18,14 @@ github_repo = config.require("githubRepo")  # "owner/repo"
 instance_type = config.get("instanceType") or "t3.micro"
 volume_size_gb = config.get_int("volumeSizeGb") or 20
 raw_retention_days = config.get_int("rawRetentionDays") or 7
+backup_retention_days = config.get_int("backupRetentionDays") or 30
+
+# Where alerts go. Set in Pulumi config, or (as CI does) with environment variables taken from
+# the GitHub variables ALERT_EMAIL and MONTHLY_BUDGET_USD: no personal address in the repository.
+alert_email = config.get("alertEmail") or os.environ.get("TFG_ALERT_EMAIL", "")
+monthly_budget_usd = (
+    config.get_int("monthlyBudgetUsd") or int(os.environ.get("TFG_MONTHLY_BUDGET_USD") or 0) or 10
+)
 
 region = pulumi.Config("aws").require("region")
 account_id = aws.get_caller_identity().account_id
@@ -51,7 +60,16 @@ aws.s3.BucketLifecycleConfiguration(
             expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
                 days=raw_retention_days
             ),
-        )
+        ),
+        # Database backups (deploy/backup.sh): keep a month, then let S3 delete them
+        aws.s3.BucketLifecycleConfigurationRuleArgs(
+            id="expire-backups",
+            status="Enabled",
+            filter=aws.s3.BucketLifecycleConfigurationRuleFilterArgs(prefix="backups/"),
+            expiration=aws.s3.BucketLifecycleConfigurationRuleExpirationArgs(
+                days=backup_retention_days
+            ),
+        ),
     ],
 )
 
@@ -104,10 +122,18 @@ aws.iam.RolePolicy(
                     "Resource": f"{bucket_arn}/*",
                 },
                 {
-                    # Database password and, once stored by the deploy workflow, the AEMET key
+                    # The database password, and the provider keys under /tfg/secrets/ that the
+                    # deploy workflow stores (deploy.sh reads them all with GetParametersByPath)
                     "Effect": "Allow",
-                    "Action": "ssm:GetParameter",
+                    "Action": ["ssm:GetParameter", "ssm:GetParametersByPath"],
                     "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter/{PROJECT}/*",
+                },
+                {
+                    # Health and backup metrics published by the timers on the instance
+                    "Effect": "Allow",
+                    "Action": "cloudwatch:PutMetricData",
+                    "Resource": "*",
+                    "Condition": {"StringEquals": {"cloudwatch:namespace": "TFG"}},
                 },
             ],
         }
@@ -197,6 +223,121 @@ instance = aws.ec2.Instance(
 
 elastic_ip = aws.ec2.Eip("host", instance=instance.id, domain="vpc", tags=tags)
 
+# --------------------------------------------------------------------------- monitoring
+# One SNS topic receives every alarm and emails it. AWS sends a confirmation email to the address
+# first: the alerts only start after you click its link.
+alerts = aws.sns.Topic("alerts", name=f"{PROJECT}-alerts", tags=tags)
+if alert_email:
+    aws.sns.TopicSubscription("alerts-email", topic=alerts.arn, protocol="email", endpoint=alert_email)
+else:
+    pulumi.log.warn(
+        "No alert email: alarms are created but nobody is notified. Set the GitHub variable "
+        "ALERT_EMAIL (or the Pulumi config alertEmail)."
+    )
+
+
+def alarm(name: str, description: str, **kwargs) -> aws.cloudwatch.MetricAlarm:
+    return aws.cloudwatch.MetricAlarm(
+        name,
+        name=f"{PROJECT}-{name}",
+        alarm_description=description,
+        alarm_actions=[alerts.arn],
+        ok_actions=[alerts.arn],  # also tell us when it recovers
+        tags=tags,
+        **kwargs,
+    )
+
+
+# The virtual machine itself is failing its checks (crashed, unreachable, hardware problem)
+alarm(
+    "instance-status-check",
+    "The EC2 instance failed its status checks for 3 minutes in a row.",
+    namespace="AWS/EC2",
+    metric_name="StatusCheckFailed",
+    dimensions={"InstanceId": instance.id},
+    statistic="Maximum",
+    period=60,
+    evaluation_periods=3,
+    threshold=1,
+    comparison_operator="GreaterThanOrEqualToThreshold",
+    treat_missing_data="notBreaching",  # a stopped instance (on purpose) is not an incident
+)
+
+# The application is down although the machine is up: deploy/healthcheck.sh publishes 1 or 0 every
+# 5 minutes from Docker's own healthcheck of the API container (which also queries the database).
+alarm(
+    "api-unhealthy",
+    "The API container has been unhealthy for at least 10 minutes.",
+    namespace="TFG",
+    metric_name="ApiHealthy",
+    statistic="Minimum",
+    period=300,
+    evaluation_periods=3,
+    datapoints_to_alarm=2,
+    threshold=1,
+    comparison_operator="LessThanThreshold",
+    treat_missing_data="notBreaching",
+)
+
+# A nightly backup ran and failed (deploy/backup.sh publishes BackupFailed when it does)
+alarm(
+    "backup-failed",
+    "The nightly database backup failed: see 'journalctl -u tfg-backup' on the instance.",
+    namespace="TFG",
+    metric_name="BackupFailed",
+    statistic="Sum",
+    period=3600,
+    evaluation_periods=1,
+    threshold=1,
+    comparison_operator="GreaterThanOrEqualToThreshold",
+    treat_missing_data="notBreaching",
+)
+
+# Burstable instances (t2/t3/t4g) are throttled to a fraction of a CPU when their credits run out:
+# the site would silently become slow. Not applicable to other instance families.
+if instance_type.startswith("t"):
+    alarm(
+        "cpu-credits-low",
+        "CPU credits are almost gone: the instance is about to be throttled.",
+        namespace="AWS/EC2",
+        metric_name="CPUCreditBalance",
+        dimensions={"InstanceId": instance.id},
+        statistic="Minimum",
+        period=300,
+        evaluation_periods=3,
+        threshold=20,
+        comparison_operator="LessThanThreshold",
+        treat_missing_data="notBreaching",
+    )
+
+# Money: an email when 80 % of the monthly budget is spent, and when the forecast says it will be
+# exceeded. Budgets email their subscribers directly (no SNS confirmation needed).
+if alert_email:
+    aws.budgets.Budget(
+        "monthly",
+        name=f"{PROJECT}-monthly",
+        budget_type="COST",
+        limit_amount=str(monthly_budget_usd),
+        limit_unit="USD",
+        time_unit="MONTHLY",
+        notifications=[
+            aws.budgets.BudgetNotificationArgs(
+                comparison_operator="GREATER_THAN",
+                notification_type="ACTUAL",
+                threshold=80,
+                threshold_type="PERCENTAGE",
+                subscriber_email_addresses=[alert_email],
+            ),
+            aws.budgets.BudgetNotificationArgs(
+                comparison_operator="GREATER_THAN",
+                notification_type="FORECASTED",
+                threshold=100,
+                threshold_type="PERCENTAGE",
+                subscriber_email_addresses=[alert_email],
+            ),
+        ],
+    )
+
 # --------------------------------------------------------------------------- GitHub OIDC
 github_oidc = aws.iam.OpenIdConnectProvider(
     "github",
@@ -258,10 +399,11 @@ aws.iam.RolePolicy(
                     "Resource": f"{bucket_arn}/bundle/*",
                 },
                 {
-                    # The workflow stores the AEMET key (GitHub secret) here for the instance
+                    # The workflow stores the provider keys (GitHub secrets) here for the
+                    # instance. Only this path: it cannot touch the database password.
                     "Effect": "Allow",
                     "Action": "ssm:PutParameter",
-                    "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter/{PROJECT}/aemet_api_key",
+                    "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter/{PROJECT}/secrets/*",
                 },
                 {
                     "Effect": "Allow",
@@ -303,5 +445,6 @@ pulumi.export("public_ip", elastic_ip.public_ip)
 pulumi.export("url", elastic_ip.public_ip.apply(lambda ip: f"http://{ip}"))
 pulumi.export("instance_id", instance.id)
 pulumi.export("bucket", bucket_name)
+pulumi.export("alerts_topic_arn", alerts.arn)
 pulumi.export("gha_deploy_role_arn", deploy_role.arn)
 pulumi.export("gha_infra_role_arn", infra_role.arn)

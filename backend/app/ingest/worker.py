@@ -1,13 +1,16 @@
 """Ingestion worker: `python -m app.ingest.worker`.
 
-Every INGEST_INTERVAL_SECONDS it asks each enabled provider for its newest products,
-downloads the ones we have not seen, stores the raw file in our bucket and records it in the DB.
+Every enabled provider runs in its own thread and is asked for its newest products on its own
+schedule (`poll_seconds`, default INGEST_INTERVAL_SECONDS). New products are downloaded, the raw
+file is stored in our bucket and a row is recorded in the DB. One thread per provider means a slow
+source (a Copernicus request can wait minutes in a queue) never delays the others.
 Later steps (decoding, tile rendering) plug in right after the upload.
 """
 
 import logging
+import signal
 import tempfile
-import time
+import threading
 from pathlib import Path
 
 from sqlalchemy import select
@@ -60,14 +63,39 @@ def run_once(providers: list[Provider]) -> None:
             log.exception("%s: ingestion failed", provider.name)
 
 
+def provider_loop(provider: Provider, stop: threading.Event) -> None:
+    interval = provider.poll_seconds or settings.ingest_interval_seconds
+    while not stop.is_set():
+        run_once([provider])
+        stop.wait(interval)  # returns early when asked to stop
+
+
+def start_workers(providers: list[Provider], stop: threading.Event) -> list[threading.Thread]:
+    threads = [
+        threading.Thread(target=provider_loop, args=(p, stop), name=f"ingest-{p.name}", daemon=True)
+        for p in providers
+    ]
+    for thread in threads:
+        thread.start()
+    return threads
+
+
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(threadName)s %(levelname)s %(message)s"
+    )
     ensure_bucket()
     providers = enabled_providers()
     log.info("worker started, providers: %s", [p.name for p in providers])
-    while True:
-        run_once(providers)
-        time.sleep(settings.ingest_interval_seconds)
+
+    stop = threading.Event()
+    # `docker stop` sends SIGTERM: finish quietly instead of being killed mid-download
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    threads = start_workers(providers, stop)
+    for thread in threads:
+        thread.join()
+    if not threads:
+        stop.wait()  # nothing enabled: stay up (and healthy) until stopped
 
 
 if __name__ == "__main__":

@@ -74,21 +74,29 @@ jobs:
           BUCKET="tfg-data-${{ vars.AWS_ACCOUNT_ID }}-${AWS_REGION}"
           aws s3 cp docker-compose.yml        "s3://${BUCKET}/bundle/docker-compose.yml"
           aws s3 cp docker-compose.prod.yml   "s3://${BUCKET}/bundle/docker-compose.prod.yml"
-          aws s3 cp deploy/Caddyfile          "s3://${BUCKET}/bundle/deploy/Caddyfile"
-          aws s3 cp deploy/deploy.sh          "s3://${BUCKET}/bundle/deploy/deploy.sh"
+          # Caddyfile and every helper script (deploy, backup, restore, timers, health check)
+          aws s3 cp deploy "s3://${BUCKET}/bundle/deploy" --recursive --exclude "README.md"
 
-      - name: Store the AEMET API key in SSM Parameter Store
-        # The instance reads it from there (deploy.sh); it never appears in the SSM command text.
+      - name: Store the provider API keys in SSM Parameter Store
+        # The instance reads them from there (deploy.sh): they never appear in the SSM command text.
+        # Add a provider key here (and as a GitHub secret) and it reaches the containers as an
+        # environment variable of the same name. Unset secrets are skipped, not deleted.
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          EUMETSAT_CONSUMER_KEY: ${{ secrets.EUMETSAT_CONSUMER_KEY }}
+          EUMETSAT_CONSUMER_SECRET: ${{ secrets.EUMETSAT_CONSUMER_SECRET }}
+          CDS_API_KEY: ${{ secrets.CDS_API_KEY }}
         run: |
-          if [ -n "$AEMET_API_KEY" ]; then
-            aws ssm put-parameter --name /tfg/aemet_api_key --type SecureString \
-              --overwrite --value "$AEMET_API_KEY" --region "$AWS_REGION" > /dev/null
-            echo "AEMET key stored."
-          else
-            echo "AEMET_API_KEY secret not set: skipping."
-          fi
+          for NAME in AEMET_API_KEY EUMETSAT_CONSUMER_KEY EUMETSAT_CONSUMER_SECRET CDS_API_KEY; do
+            VALUE="${!NAME}"
+            if [ -n "$VALUE" ]; then
+              aws ssm put-parameter --name "/tfg/secrets/${NAME,,}" --type SecureString \
+                --overwrite --value="$VALUE" --region "$AWS_REGION" > /dev/null
+              echo "$NAME stored."
+            else
+              echo "$NAME not set: skipping."
+            fi
+          done
 
       - name: Run deploy.sh on the instance (SSM)
         run: |
@@ -101,12 +109,15 @@ jobs:
           OWNER="${{ needs.build.outputs.owner }}"
           SITE="${{ vars.SITE_ADDRESS }}"
           SITE="${SITE:-:80}"
+          # Requests/minute per client address for the API; set the variable to 0 to load-test
+          RATE="${{ vars.RATE_LIMIT_PER_MINUTE }}"
+          RATE="${RATE:-600}"
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
             --comment "deploy ${GITHUB_SHA}" \
-            --parameters "commands=[\"aws s3 cp s3://${BUCKET}/bundle/deploy/deploy.sh /opt/tfg/deploy.sh --region ${AWS_REGION}\",\"bash /opt/tfg/deploy.sh ${GITHUB_SHA} ${OWNER} '${SITE}'\"]" \
+            --parameters "commands=[\"aws s3 cp s3://${BUCKET}/bundle/deploy/deploy.sh /opt/tfg/deploy.sh --region ${AWS_REGION}\",\"bash /opt/tfg/deploy.sh ${GITHUB_SHA} ${OWNER} '${SITE}' ${RATE}\"]" \
             --query Command.CommandId --output text)
 
           # `wait` exits non-zero if the command fails; show the output either way.

@@ -1,7 +1,10 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 
-from sqlalchemy import DateTime, String, create_engine
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import DateTime, Engine, String, create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from app.config import settings
@@ -32,9 +35,28 @@ class Product(Base):
     )
 
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent  # holds alembic.ini and migrations/
+BASELINE = "0001"  # the schema that create_all() used to build, before migrations existed
+
+
+def migrate(target: Engine) -> None:
+    """Bring the database up to the newest schema (`alembic upgrade head`).
+
+    A database created by an older version of the app (tables but no alembic_version) already has
+    the baseline schema: it is adopted (stamped) instead of failing on "table already exists".
+    """
+    config = Config(str(BACKEND_DIR / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+    with target.begin() as connection:
+        config.attributes["connection"] = connection
+        tables = inspect(connection).get_table_names()
+        if "products" in tables and "alembic_version" not in tables:
+            command.stamp(config, BASELINE)
+        command.upgrade(config, "head")
+
+
 def init_db() -> None:
-    # Fine for a scaffold. Switch to Alembic migrations once the schema starts evolving.
-    Base.metadata.create_all(engine)
+    migrate(engine)
 
 
 def get_session() -> Iterator[Session]:

@@ -12,6 +12,9 @@ def test_health_and_providers():
         providers = {p["name"]: p for p in client.get("/api/providers").json()}
         assert {"noaa_nexrad", "aemet_radar", "eumetsat", "copernicus"} <= providers.keys()
         assert providers["noaa_nexrad"]["enabled"] is True
+        # EUMETSAT is switched off until its keys can be obtained (see providers/eumetsat.py)
+        assert providers["eumetsat"]["implemented"] is False
+        assert providers["eumetsat"]["enabled"] is False
         assert providers["aemet_radar"]["implemented"] is True
         assert providers["aemet_radar"]["enabled"] is False  # no AEMET_API_KEY in the tests
 

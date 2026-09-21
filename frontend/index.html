@@ -6,15 +6,7 @@
     <title>Plataforma de radar meteorológico</title>
     <meta name="description" content="Satélite y radar de lluvia sobre España y Europa" />
     <meta name="theme-color" content="#0b6fbf" />
-    <script>
-      // Set the theme before the first paint so a dark-mode visitor never sees a white flash.
-      // (Same rule as theme.ts: saved choice, otherwise the system preference.)
-      try {
-        var t = localStorage.getItem("tfg-theme");
-        if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.dataset.theme = t;
-      } catch (e) {}
-    </script>
+    <script src="/theme-init.js"></script>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" href="/icons/favicon.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />

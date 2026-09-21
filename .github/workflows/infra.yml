@@ -33,6 +33,19 @@ jobs:
 
       - run: pip install -r infra/requirements.txt
 
+      # First show what is going to change (in the log, for review), then apply it
+      - uses: pulumi/actions@v6
+        with:
+          command: preview
+          stack-name: dev
+          work-dir: infra
+          diff: true
+          cloud-url: s3://tfg-pulumi-state-${{ vars.AWS_ACCOUNT_ID }}-${{ vars.AWS_REGION }}
+        env:
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+          TFG_ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          TFG_MONTHLY_BUDGET_USD: ${{ vars.MONTHLY_BUDGET_USD }}
+
       - uses: pulumi/actions@v6
         with:
           command: up
@@ -41,3 +54,5 @@ jobs:
           cloud-url: s3://tfg-pulumi-state-${{ vars.AWS_ACCOUNT_ID }}-${{ vars.AWS_REGION }}
         env:
           PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+          TFG_ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          TFG_MONTHLY_BUDGET_USD: ${{ vars.MONTHLY_BUDGET_USD }}
