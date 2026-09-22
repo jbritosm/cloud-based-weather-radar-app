@@ -5,6 +5,9 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    // maplibre-gl ships no "export default" (named exports + a UMD global only); this lets
+    // `import maplibregl from "maplibre-gl"` work, matching what Vite does for it at runtime.
+    "esModuleInterop": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
