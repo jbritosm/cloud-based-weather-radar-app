@@ -24,6 +24,16 @@ updates:
       # Kept in step with the Playwright container/browsers used in CI: update it deliberately
       - dependency-name: "@playwright/test"
         update-types: ["version-update:semver-minor"]
+      # Vite 5, @vitejs/plugin-react 4.x and Vitest 2.x are a matched trio (plugin-react 6.x and
+      # Vitest 3.x both need Vite 8, which we are not on): a major bump on just one of them is
+      # guaranteed to fail with an ERESOLVE peer-dependency conflict, so Dependabot must not
+      # propose them individually. Upgrade all three together, deliberately, when it is time.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
